@@ -846,7 +846,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
         // 通过环境变量传路径，避免路径中的空格/引号进入命令行字符串。
         // Start-Process 使用 Windows 文件关联，比 rundll32 url.dll 更可靠。
         execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command',
-          'Start-Process -LiteralPath $env:DSH_CORPUS_OPEN_FILE'], {
+          'Start-Process -FilePath $env:DSH_CORPUS_OPEN_FILE'], {
           windowsHide: true,
           env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs },
         }, () => {})
