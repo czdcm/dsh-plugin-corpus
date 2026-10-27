@@ -40,6 +40,8 @@ export const Config = Schema.object({
   maxPromptFiles: Schema.number().min(0).max(60).default(12),
   ingestProvider: Schema.string().default(''),
   ingestModel: Schema.string().default(''),
+  ingestVisionProvider: Schema.string().default(''),
+  ingestVisionModel: Schema.string().default(''),
   ingestMaxChars: Schema.number().min(2000).max(200000).default(24000),
   ingestTimeoutMs: Schema.number().min(10000).max(600000).default(120000),
   structureMaxChars: Schema.number().min(4000).max(200000).default(48000),

@@ -493,6 +493,14 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
         return false
       }
     },
+    visionStatus: async () => {
+      try {
+        if (agent && typeof agent.visionStatus === 'function') return await agent.visionStatus()
+        return { available: false, reason: '摄取小代理不可用' }
+      } catch (error) {
+        return { available: false, reason: error instanceof Error ? error.message : String(error) }
+      }
+    },
     limits: { maxFiles: MAX_FILES, maxUploadBytes: MAX_UPLOAD_BYTES },
   }
 }

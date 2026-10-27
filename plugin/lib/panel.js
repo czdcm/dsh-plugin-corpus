@@ -59,6 +59,23 @@ function resolveOriginalPath(root, relPath) {
   return { rel, abs, stat }
 }
 
+function resolveCorpusFile(root, relPath) {
+  const rel = String(relPath || '').replace(/\\/g, '/')
+  const parts = rel.split('/')
+  if (rel === '' || parts.some((part) => part === '' || part === '..' || part === '.')) return null
+  const rootAbs = path.resolve(root)
+  const abs = path.resolve(rootAbs, rel)
+  if (!(abs === rootAbs || abs.startsWith(rootAbs + path.sep))) return null
+  let stat
+  try { stat = fs.lstatSync(abs) } catch { return null }
+  if (!stat.isFile() || stat.isSymbolicLink()) return null
+  let real
+  try { real = fs.realpathSync(abs) } catch { return null }
+  const relReal = path.relative(fs.realpathSync(rootAbs), real)
+  if (relReal.startsWith('..') || path.isAbsolute(relReal)) return null
+  return { rel, abs, stat }
+}
+
 function sendFileBuffer(res, contentType, buffer, options = {}) {
   res.statusCode = options.status || 200
   res.setHeader('content-type', contentType || 'application/octet-stream')
@@ -614,13 +631,24 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
         backend: item.backend,
         docs: item.docs,
       }))
+      let visionStatus = { available: false, reason: '摄取小代理不可用' }
+      if (ingest && typeof ingest.visionStatus === 'function') {
+        visionStatus = await ingest.visionStatus()
+      } else if (ingest && typeof ingest.visionAvailable === 'function') {
+        try {
+          visionStatus = { available: (await ingest.visionAvailable()) === true, reason: '旧版摄取服务没有能力诊断' }
+        } catch {
+          visionStatus = { available: false, reason: '无法读取视觉能力' }
+        }
+      }
       sendJson(res, 200, {
         ok: true,
         collections,
         formats: SUPPORTED_EXTENSIONS,
         extractors: extractorAvailability(),
         aiAvailable: Boolean(ingest && typeof ingest.aiAvailable === 'function' && ingest.aiAvailable()),
-        visionAvailable: Boolean(ingest && typeof ingest.visionAvailable === 'function' && await ingest.visionAvailable()),
+        visionAvailable: visionStatus.available === true,
+        visionStatus,
         limits: ingest && ingest.limits ? ingest.limits : { maxFiles: 200, maxUploadBytes: 25 * 1024 * 1024 },
       })
     }),
@@ -796,6 +824,30 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
       try {
         execFile('explorer.exe', [effectiveRoot], { windowsHide: true }, () => {})
         sendJson(res, 200, { ok: true, root: effectiveRoot })
+      } catch (error) {
+        sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) })
+      }
+    }),
+  })
+
+  // 用外部程序打开 processed/原件；mode=choose 弹 Windows“打开方式”，否则用默认程序。
+  routes.push({
+    kind: 'exact',
+    path: `${PANEL_PREFIX}/open-external`,
+    handler: guarded(async (req, res) => {
+      if (req.method !== 'POST') { sendJson(res, 405, { ok: false, error: 'method not allowed' }); return }
+      if (process.platform !== 'win32') { sendJson(res, 501, { ok: false, error: '外部打开只支持 Windows' }); return }
+      const body = await readJson(req)
+      const resolved = resolveCorpusFile(root, body && body.path)
+      if (resolved === null) { sendJson(res, 400, { ok: false, error: 'path 必须是语料根内的文件' }); return }
+      const mode = body.mode === 'choose' ? 'choose' : 'default'
+      try {
+        if (mode === 'choose') {
+          execFile('rundll32.exe', ['shell32.dll,OpenAs_RunDLL', resolved.abs], { windowsHide: true }, () => {})
+        } else {
+          execFile('rundll32.exe', ['url.dll,FileProtocolHandler', resolved.abs], { windowsHide: true }, () => {})
+        }
+        sendJson(res, 200, { ok: true, path: resolved.rel, mode })
       } catch (error) {
         sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) })
       }

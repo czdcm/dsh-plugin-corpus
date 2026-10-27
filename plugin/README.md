@@ -54,7 +54,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 
 - **导入语料**：浏览器文件可多选；本机路径可多行输入（每行一个文件/目录），同一批全部导入同一个集合；集合留空会自动创建 `import-日期-时间`；
 - **公式**：HTML MathML、Word/PowerPoint OMML、Unicode 数学符号和已有 LaTeX 会统一整理为 `$...$` / `$$...$$`；PDF 公式行也会保留为 LaTeX 公式块（插图不要求识别）；
-- **检索**：按关键词搜索已索引的 `processed/` 内容；
+- **检索**：按关键词搜索已索引的 `processed/` 内容；结果只用于定位，不直接打开预览；
+- **查看**：点击文件列表行在右侧预览；标题栏的「用外部软件打开」可用默认程序或 Windows「打开方式」查看；
 - **语料文件**：按集合分组的资源管理器式列表；
   - 集合组默认折叠，点集合标题 `▸`/`▾` 展开或折叠；
   - 顶部有「全部展开 / 全部折叠」；
@@ -129,6 +130,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 | `.docx` `.xlsx` `.pptx` | 优先 OfficeCLI；失败/缺失时回退纯 JS ZIP+XML 解析 |
 | 图片（PNG/JPEG/WebP/GIF/BMP/TIFF） | 有可用视觉模型时结构化；否则保存原件与占位 Markdown |
 
+面板里的 **Vision** 不可用时会显示具体原因，通常是当前默认模型不支持图片输入。可以在 DSH profile 的插件配置中设置 `ingestVisionProvider` / `ingestVisionModel` 指向可接收图片的模型；未配置视觉模型时图片退回内置 Windows OCR。
+
 PDF/Office 的随包工具是可选增强；缺失时插件仍能用纯 JS/系统能力降级运行。
 OfficeCLI 是 Apache-2.0；Poppler `pdftotext` 是 GPL-2.0-or-later，详见仓库根目录的
 `THIRD_PARTY_NOTICES.md`。
@@ -186,6 +189,7 @@ OfficeCLI 是 Apache-2.0；Poppler `pdftotext` 是 GPL-2.0-or-later，详见仓�
 | `promptOrder` | `9000` | 语料提示词段在 system prompt 中的顺序 |
 | `maxPromptFiles` | `12` | 提示词里最多列多少个文件标题 |
 | `ingestProvider` / `ingestModel` | 空 | 内置小代理使用的模型覆盖 |
+| `ingestVisionProvider` / `ingestVisionModel` | 空 | 图片识别使用的视觉模型；留空跟随默认模型 |
 | `ingestMaxChars` | `24000` | 单次 ingest 的材料上限 |
 | `ingestTimeoutMs` | `120000` | ingest LLM 超时 |
 | `structureMaxChars` | `48000` | 仓库/会话结构化的材料上限 |
@@ -209,6 +213,8 @@ GET  /access            GET  /originals         GET  /original
 GET  /thumbnail         GET  /import/targets    POST /import
 GET  /import/status     POST /delete            GET  /gallery
 GET  /settings          POST /settings/root     POST /settings/open
+GET  /settings          POST /settings/root     POST /settings/open
+POST /open-external
 GET/POST /policy
 ```
 

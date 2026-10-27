@@ -71,6 +71,7 @@
         settings: '/api/dsh-plugin-corpus/settings',
         settingsRoot: '/api/dsh-plugin-corpus/settings/root',
         settingsOpen: '/api/dsh-plugin-corpus/settings/open',
+        openExternal: '/api/dsh-plugin-corpus/open-external',
       }
 
       const COPY = {
@@ -108,6 +109,9 @@
           close: '关闭',
           prevPage: '上一页',
           nextPage: '下一页',
+          externalOpen: '用外部软件打开',
+          externalOpenChoose: '选择其他应用…',
+          externalOpenFailed: '外部打开失败：',
           pageInfo: (from, to, total) => `行 ${from}–${to} / ${total}`,
           readFailed: '读取失败：',
           collectionsTitle: '集合与索引',
@@ -297,6 +301,7 @@
           importOfficeHint: 'Office（docx/xlsx/pptx）优先用随包 officecli 提取，失败回退纯 JS 解析器，不依赖外部安装。',
           importOcrHint: '当前系统没有可用的 Windows OCR：扫描版 PDF 可能只能拿到空文本。',
           importVisionHint: '当前模型/运行时不支持图片输入：图片会退化为内置 Windows OCR（若可用）。',
+          importVisionReason: '不可用原因：',
           importLimitHint: (size, count) => `单文件 ≤ ${size}，最多 ${count} 个文件；大文件建议用本机路径。`,
           importErrorNote: '操作失败：',
           importOpen: '导入语料',
@@ -379,6 +384,9 @@
           close: 'Close',
           prevPage: 'Previous',
           nextPage: 'Next',
+          externalOpen: 'Open in external app',
+          externalOpenChoose: 'Choose another app…',
+          externalOpenFailed: 'External open failed: ',
           pageInfo: (from, to, total) => `lines ${from}–${to} / ${total}`,
           readFailed: 'Could not read file: ',
           collectionsTitle: 'Collections & indexes',
@@ -567,6 +575,7 @@
           importOfficeHint: 'DOCX/XLSX/PPTX use the bundled officecli first, falling back to the bundled pure-JS parser; no external install is required.',
           importOcrHint: 'Windows OCR is unavailable on this system: scanned PDFs may produce empty text.',
           importVisionHint: 'The current model/runtime does not accept images: image files fall back to bundled Windows OCR when available.',
+          importVisionReason: 'Reason: ',
           importLimitHint: (size, count) => `Max ${size} per file, up to ${count} files; large files are better imported by local path.`,
           importErrorNote: 'Failed: ',
           importOpen: 'Import corpus',
@@ -1932,6 +1941,15 @@
 
         const closePreview = () => setPreviewState({ loading: false, error: null, data: null, path: null })
 
+        const openExternal = (mode) => {
+          const path = previewState.path
+          if (path === null || path === undefined || path === '') return
+          postJson(API.openExternal, { path, mode: mode === 'choose' ? 'choose' : 'default' }).catch((error) => {
+            if (!mountedRef.current) return
+            setPreviewState((prev) => ({ ...prev, error: t.externalOpenFailed + errorText(error) }))
+          })
+        }
+
         const startReindex = (payload) => {
           const tr = copy()
           setStarting(true)
@@ -2074,22 +2092,10 @@
         // ---- 结果区 ----
         const hitCard = (hit, index) => {
           const title = hit && (hit.title || hit.path) ? String(hit.title || hit.path) : '—'
-          // hit.lines 形如 "45-51"：预览从命中片段的首行开始，而不是文件第 1 行。
-          const hitFrom = firstLineOf(hit && hit.lines)
           const hitPath = hit && hit.path ? String(hit.path) : ''
           return h('div', {
             key: 'hit-' + index + '-' + hitPath,
-            role: 'button',
-            tabIndex: 0,
             style: HIT_CARD,
-            onClick: () => openPreview(hitPath, hitFrom),
-            onKeyDown: (event) => {
-              if (!event) return
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                openPreview(hitPath, hitFrom)
-              }
-            },
           },
             h('div', { style: { ...ROW, justifyContent: 'space-between' } },
               h('span', { style: { fontSize: '13px', lineHeight: '20px', fontWeight: 500, wordBreak: 'break-all', flex: '1 1 auto', minWidth: 0 } }, title),
@@ -2129,6 +2135,21 @@
             previewData
               ? h('span', { style: CHIP }, t.pageInfo(num(previewData.from), num(previewData.to), num(previewData.totalLines)))
               : null,
+            h('div', { style: { display: 'flex', alignItems: 'center' } },
+              h('button', {
+                type: 'button',
+                style: { ...BTN, borderTopRightRadius: 0, borderBottomRightRadius: 0, paddingRight: '9px' },
+                title: t.externalOpen,
+                onClick: () => openExternal('default'),
+              }, '📂 ' + t.externalOpen),
+              h('button', {
+                type: 'button',
+                style: { ...BTN, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, paddingLeft: '7px', paddingRight: '7px' },
+                title: t.externalOpenChoose,
+                'aria-label': t.externalOpenChoose,
+                onClick: () => openExternal('choose'),
+              }, '▾'),
+            ),
             h('button', { type: 'button', style: BTN, disabled: previewState.loading || !previewData || num(previewData.from) <= 1, onClick: goPrev }, t.prevPage),
             h('button', {
               type: 'button', style: BTN,
@@ -2299,8 +2320,8 @@
               onDeleted: () => { loadOverview() },
             }),
             h('div', { style: GRID },
-              h('div', { style: COLUMN }, searchSection, resultsSection, previewSection),
-              h('div', { style: COLUMN }, collectionsSection, policySection),
+              h('div', { style: COLUMN }, searchSection, resultsSection),
+              h('div', { style: COLUMN }, previewSection, collectionsSection, policySection),
             ),
             h('p', { style: FOOT }, t.foot),
           ),
@@ -3154,6 +3175,8 @@
         const ocrAvailable = extractors.ocr === true
         const imageAvailable = extractors.image === true
         const visionAvailable = targetsData !== null && targetsData.visionAvailable === true
+        const visionStatus = targetsData !== null && targetsData.visionStatus && typeof targetsData.visionStatus === 'object' ? targetsData.visionStatus : null
+        const visionReason = visionStatus !== null && visionStatus.available !== true && typeof visionStatus.reason === 'string' && visionStatus.reason !== '' ? visionStatus.reason : ''
         const infoSection = h('section', { style: PERM_SECTION },
           h('div', { style: PERM_HEAD }, h('h2', { style: PERM_H2 }, t.importFormatsTitle)),
           h('div', { style: PERM_CHIPS_ROW }, formats.map((format) => h('span', {
@@ -3169,7 +3192,7 @@
           pdfAvailable ? h('p', { style: PERM_TEXT }, t.importPdfOcrHint) : null,
           officeAvailable ? h('p', { style: PERM_TEXT }, t.importOfficeHint) : null,
           ocrAvailable ? null : h('p', { style: PERM_TEXT }, t.importOcrHint),
-          imageAvailable && visionAvailable ? null : h('p', { style: PERM_TEXT }, t.importVisionHint),
+          imageAvailable && visionAvailable ? null : h('p', { style: PERM_TEXT }, t.importVisionHint + (visionReason !== '' ? ' ' + t.importVisionReason + visionReason : '')),
           h('p', { style: PERM_FOOT }, t.importLimitHint(formatSize(maxUploadBytes), String(maxFiles))),
         )
 

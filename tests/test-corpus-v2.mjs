@@ -12,7 +12,7 @@
  *   · collectionStatus / stats —— 字段与数值（like、ripgrep、未建索引三种状态）；
  *   · jobs.createJobRunner —— 启动、单任务串行、wait 到 done、result、锁释放、
  *     陈旧锁（死 pid / 超过 2 小时）回收、活锁拒绝、dispose；
- *   · panel.createPanelRoutes —— 用假 req/res 驱动，19 条路由：/overview、/files、/search
+ *   · panel.createPanelRoutes —— 用假 req/res 驱动，20 条路由：/overview、/files、/search
  *    （普通 + workspace ACL 过滤）、/read、/reindex → /status、/policy、
  *    /access、/import/targets、POST /import、/import/status、/originals、/original、/thumbnail，
  *    v1.5 的 GET /settings（形状/busy）、POST /settings/root（任务运行中 409、目标嵌套 400），
@@ -421,12 +421,12 @@ try {
   const routes = createPanelRoutes({ root, dshHome: home, jobs: panelJobs, sessionLookup, ingest: fakeIngest })
   const byPath = new Map(routes.map((route) => [route.path, route]))
 
-  assert(routes.length === 19, '面板应有 19 条路由，实际 ' + routes.length)
+  assert(routes.length === 20, '面板应有 20 条路由，实际 ' + routes.length)
   assert(routes.every((route) => route.kind === 'exact' && route.path.startsWith(PANEL_PREFIX)), '路由应为 exact 且带统一前缀')
   for (const suffix of ['overview', 'files', 'search', 'read', 'reindex', 'status', 'policy', 'access', 'import/targets', 'import', 'import/status', 'originals', 'original', 'thumbnail', 'settings', 'settings/root', 'settings/open', 'gallery', 'delete']) {
     assert(byPath.has(PANEL_PREFIX + '/' + suffix), '缺少路由 ' + suffix)
   }
-  ok('面板路由表：19 条 exact（v1.2 /access + v1.3 /import/* 与原件/缩略图），前缀 ' + PANEL_PREFIX)
+  ok('面板路由表：20 条 exact（v1.2 /access + v1.3 /import/* 与原件/缩略图），前缀 ' + PANEL_PREFIX)
 
   const invokeRoutes = (routeList, method, url, body, headers = {}) => new Promise((resolve, reject) => {
     const route = routeList.find((item) => item.path === url.split('?')[0])

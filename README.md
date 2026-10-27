@@ -16,7 +16,8 @@
 - **文档导入**：Markdown、纯文本、HTML、CSV、PDF、DOCX、XLSX、PPTX 和常见图片；每次导入保留 `originals/`（供人看）和 `processed/`（供模型读）。
 - **内置小代理**：固定提示词、单轮后台调用，不污染主会话；明确要求公式输出 LaTeX。
 - **主会话接口**：把克隆的仓库或当前会话总结成语料。
-- **Web 面板**：左侧栏语料库页面（导入、检索、文件列表、集合折叠、删除、根目录设置）；右侧栏权限编辑。
+- **Web 面板**：左侧栏语料库页面（导入、检索、文件列表、集合折叠、删除、根目录设置）；检索只负责定位，查看统一走文件列表打开的右侧预览；右侧栏权限编辑。
+- **外部查看**：预览标题栏可用 Windows 默认程序打开当前语料，或选择“打开方式”用已安装的记事本/VSCode 等程序查看。
 - **Windows 辅助能力**：内置 OCR、缩略图脚本，可选 OfficeCLI/pdftotext。
 
 ## 环境要求
@@ -112,7 +113,8 @@ POST /read              POST /reindex           GET  /status
 GET  /access            GET  /originals         GET  /original
 GET  /thumbnail         GET  /import/targets    POST /import
 GET  /import/status     POST /delete            GET  /gallery
-GET  /settings          POST /settings/root     POST  /settings/open
+GET  /settings          POST /settings/root     POST /settings/open
+POST /open-external
 GET/POST /policy
 ```
 
@@ -132,6 +134,7 @@ GET/POST /policy
 | `promptOrder` | `9000` | 语料提示词段顺序 |
 | `maxPromptFiles` | `12` | 提示词最多列出的文件标题数 |
 | `ingestProvider` / `ingestModel` | 空 | 内置小代理模型覆盖 |
+| `ingestVisionProvider` / `ingestVisionModel` | 空 | 图片识别使用的视觉模型；留空跟随默认模型 |
 | `ingestMaxChars` | `24000` | 单次摄取材料上限 |
 | `ingestTimeoutMs` | `120000` | 摄取模型超时 |
 | `structureMaxChars` | `48000` | 仓库/会话结构化材料上限 |

@@ -91,11 +91,18 @@ export function createIngestAgent({ ctx, config, log }) {
     return routeValue
   }
 
+  const visionRoute = () => {
+    const provider = String(config.ingestVisionProvider || '').trim()
+    const model = String(config.ingestVisionModel || '').trim()
+    if (provider !== '' && model !== '') return { provider, model }
+    return route()
+  }
+
   const available = () => Boolean(llm && typeof llm.stream === 'function' && route() !== null)
 
   const streamMarkdown = async (content, timeoutMs, options = {}) => {
     if (!available()) throw new Error('LLM 服务或默认模型不可用')
-    const modelOptions = route()
+    const modelOptions = options.route || route()
     const controller = new AbortController()
     const timer = setTimeout(() => {
       try { controller.abort() } catch { /* 已结束 */ }
@@ -147,23 +154,42 @@ export function createIngestAgent({ ctx, config, log }) {
   }
 
   /** 该模型/运行环境是否可以接收图片 content block。 */
-  const supportsImages = async () => {
-    if (!attachments || typeof attachments.saveImages !== 'function') return false
-    if (!llm || typeof llm.stream !== 'function') return false
-    const options = route()
-    if (options === null) return false
+  /** 图片输入能力的详细诊断；UI 用它解释“Vision 不可用”。 */
+  const visionStatus = async () => {
+    if (!attachments || typeof attachments.saveImages !== 'function') {
+      return { available: false, reason: 'attachments 服务不可用', provider: null, model: null }
+    }
+    if (!llm || typeof llm.stream !== 'function') {
+      return { available: false, reason: 'LLM 服务不可用', provider: null, model: null }
+    }
+    const options = visionRoute()
+    if (options === null) return { available: false, reason: '没有可用模型', provider: null, model: null }
     try {
       if (typeof llm.resolveModelInfo === 'function') {
         const info = await llm.resolveModelInfo(options.provider, options.model)
         const modalities = info && Array.isArray(info.inputModalities) ? info.inputModalities : null
-        if (modalities !== null) return modalities.some((item) => String(item).toLowerCase().includes('image'))
+        if (modalities !== null && !modalities.some((item) => String(item).toLowerCase().includes('image'))) {
+          return {
+            available: false,
+            reason: `模型 ${options.provider}/${options.model} 不支持图片输入`,
+            provider: options.provider,
+            model: options.model,
+            inputModalities: modalities,
+          }
+        }
       }
-    } catch {
-      return false
+    } catch (error) {
+      return {
+        available: false,
+        reason: `无法读取模型能力：${error instanceof Error ? error.message : String(error)}`,
+        provider: options.provider,
+        model: options.model,
+      }
     }
-    // 元数据缺失时先乐观尝试；调用失败由 ingest 回退 OCR。
-    return true
+    return { available: true, reason: null, provider: options.provider, model: options.model }
   }
+
+  const supportsImages = async () => (await visionStatus()).available
 
   const structureImages = async ({ images, meta }) => {
     if (!attachments || typeof attachments.saveImages !== 'function') throw new Error('图片附件服务不可用')
@@ -185,9 +211,9 @@ export function createIngestAgent({ ctx, config, log }) {
       const ref = item && item.image ? item.image : item
       if (ref) content.push({ type: 'image', attachment: ref })
     }
-    return streamMarkdown(content, timeoutOf())
+    return streamMarkdown(content, timeoutOf(), { route: visionRoute() })
   }
 
   if (log) log('info', `摄取小代理：${available() ? '可用' : '不可用'}（${route() ? `${route().provider}/${route().model}` : '无模型'}）`)
-  return { available, route, structure, structureImages, supportsImages }
+  return { available, route, visionRoute, structure, structureImages, supportsImages, visionStatus }
 }

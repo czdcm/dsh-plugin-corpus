@@ -703,7 +703,7 @@ function robustnessChecks() {
   eq('无 locale 时仍注册两个点', slots.registered.length, 2)
 }
 
-/** 点击命中片段：预览应从 hit.lines 的首行开始。 */
+/** 检索结果只用于定位，不提供点击查看入口；查看统一走文件列表/右侧预览。 */
 async function hitPreviewChecks() {
   const searchState = {
     loading: false,
@@ -729,19 +729,8 @@ async function hitPreviewChecks() {
   const { ctx } = makeCtx({ slots, lang: 'zh-CN' })
   exports.apply(ctx)
   const pageElement = slots.registered[1].component()
-  const hitNode = findNode(pageElement, (node) => Boolean(node.props && node.props.role === 'button' && node.props.tabIndex === 0))
-  ok('渲染出可点击的命中片段', hitNode !== null)
-  if (hitNode === null) return
-  const before = harness.fetchCalls.length
-  hitNode.props.onClick()
-  await tick()
-  const readCall = harness.fetchCalls.slice(before).find((call) => String(call.url) === API_BASE + '/read')
-  ok('点击命中片段触发 POST /read', readCall !== undefined)
-  if (!readCall) return
-  const payload = JSON.parse(String(readCall.init.body))
-  eq('预览从命中片段首行开始', payload.from, 45)
-  eq('预览路径为命中文件', payload.path, 'dsh-docs/networking.md')
-  eq('预览每页 60 行', payload.lines, 60)
+  const clickableHit = findNode(pageElement, (node) => Boolean(node.props && node.props.role === 'button' && node.props.tabIndex === 0))
+  ok('检索结果不提供可点击的查看入口', clickableHit === null)
 }
 
 /** 工作区视角选 '*'（通配工作区）时，不能把它当字面 workspace 传给 /search。 */

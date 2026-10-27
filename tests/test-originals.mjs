@@ -64,7 +64,7 @@ try {
     status: () => ({ active: null, recent: [] }),
   }
   const routes = createPanelRoutes({ root, dshHome: home, jobs, sessionLookup: () => null, ingest })
-  assert(routes.length === 19, '面板路由 19 条，实际 ' + routes.length)
+  assert(routes.length === 20, '面板路由 19 条，实际 ' + routes.length)
   ok('面板路由 19 条（含 originals/original/thumbnail）')
 
   const byPath = new Map(routes.map((route) => [route.path, route]))

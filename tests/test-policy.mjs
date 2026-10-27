@@ -11,7 +11,7 @@
  *     原子覆盖（无临时文件残留）、损坏 JSON 的 error、校验失败不写盘；
  *   · access.ruleExpiresAt / ruleExpired 与 authorize 的过期语义
  *     （过期 grant 不生效、未到期 grant 生效、过期 deny 不阻塞、未过期 deny 仍生效）；
- *   · panel.createPanelRoutes —— 19 条路由（v1.3 新增 /import/targets、/import、/import/status、
+ *   · panel.createPanelRoutes —— 20 条路由（v1.3 新增 /import/targets、/import、/import/status、
  *     /originals、/original、/thumbnail）、GET /access（session 解析/fallback/未知）、
  *     GET /policy、POST /policy（400 errors / 200 + backup + 立即生效 / 直接传策略对象）、
  *     同源 403、方法 405。
@@ -286,12 +286,12 @@ try {
   const routes = createPanelRoutes({ root, dshHome: home, jobs: fakeJobs, sessionLookup })
   const byPath = new Map(routes.map((route) => [route.path, route]))
 
-  assert(routes.length === 19, '面板应有 19 条路由，实际 ' + routes.length)
+  assert(routes.length === 20, '面板应有 20 条路由，实际 ' + routes.length)
   assert(routes.every((route) => route.kind === 'exact' && route.path.startsWith(PANEL_PREFIX)), '路由应为 exact 且带统一前缀')
   for (const suffix of ['overview', 'files', 'search', 'read', 'reindex', 'status', 'policy', 'access', 'import/targets', 'import', 'import/status', 'originals', 'original', 'thumbnail', 'settings', 'settings/root', 'settings/open', 'gallery', 'delete']) {
     assert(byPath.has(PANEL_PREFIX + '/' + suffix), '缺少路由 ' + suffix)
   }
-  ok('面板路由表：19 条 exact（v1.2 /access + v1.3 /import/* 与原件/缩略图）')
+  ok('面板路由表：20 条 exact（v1.2 /access + v1.3 /import/* 与原件/缩略图）')
 
   const invoke = (method, url, body, headers = {}) => new Promise((resolve, reject) => {
     const route = byPath.get(url.split('?')[0])
