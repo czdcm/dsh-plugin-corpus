@@ -830,7 +830,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
     }),
   })
 
-  // 用外部程序打开 processed/原件；mode=choose 弹 Windows“打开方式”，否则用默认程序。
+  // 用 Windows 默认关联程序打开 processed/原件。
   routes.push({
     kind: 'exact',
     path: `${PANEL_PREFIX}/open-external`,
@@ -840,14 +840,17 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
       const body = await readJson(req)
       const resolved = resolveCorpusFile(root, body && body.path)
       if (resolved === null) { sendJson(res, 400, { ok: false, error: 'path 必须是语料根内的文件' }); return }
-      const mode = body.mode === 'choose' ? 'choose' : 'default'
+      const powershell = findPowerShell()
+      if (powershell === null) { sendJson(res, 500, { ok: false, error: 'Windows PowerShell 不可用' }); return }
       try {
-        if (mode === 'choose') {
-          execFile('rundll32.exe', ['shell32.dll,OpenAs_RunDLL', resolved.abs], { windowsHide: true }, () => {})
-        } else {
-          execFile('rundll32.exe', ['url.dll,FileProtocolHandler', resolved.abs], { windowsHide: true }, () => {})
-        }
-        sendJson(res, 200, { ok: true, path: resolved.rel, mode })
+        // 通过环境变量传路径，避免路径中的空格/引号进入命令行字符串。
+        // Start-Process 使用 Windows 文件关联，比 rundll32 url.dll 更可靠。
+        execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command',
+          'Start-Process -LiteralPath $env:DSH_CORPUS_OPEN_FILE'], {
+          windowsHide: true,
+          env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs },
+        }, () => {})
+        sendJson(res, 200, { ok: true, path: resolved.rel })
       } catch (error) {
         sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) })
       }

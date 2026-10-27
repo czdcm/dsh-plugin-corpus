@@ -335,6 +335,9 @@
           deleteRow: '删除',
           deleteRowConfirm: '确认',
           galleryOpen: '打开语料',
+          galleryProcessed: '处理后语料（默认）',
+          galleryOriginal: '原文件',
+          galleryOriginalMissing: '无原文件',
           galleryNoDocs: '还没有可展示的语料；用「导入语料」或在主会话里调用 corpus_structure 后，这里会出现文件列表。',
           reindexHelpTitle: '重建按钮说明',
           reindexHelpIntro: '两个按钮都会重建当前有权限集合的索引，但成本不同：',
@@ -611,6 +614,9 @@
           deleteRow: 'Delete',
           deleteRowConfirm: 'Confirm',
           galleryOpen: 'Open document',
+          galleryProcessed: 'Processed (default)',
+          galleryOriginal: 'Original file',
+          galleryOriginalMissing: 'No original file',
           galleryNoDocs: 'No corpus documents yet. Import files or call corpus_structure in the main session, then files will appear here.',
           reindexHelpTitle: 'Rebuild button help',
           reindexHelpIntro: 'Both buttons rebuild indexes for collections you can access, with different costs:',
@@ -1588,6 +1594,7 @@
         const [collection, setCollection] = React.useState('')
         const [data, setData] = React.useState({ loading: true, error: null, items: [], total: 0, shown: 0 })
         const [expanded, setExpanded] = React.useState({})
+        const [menuPath, setMenuPath] = React.useState(null)
 
         const load = React.useCallback(() => {
           setData((prev) => ({ ...prev, loading: true, error: null }))
@@ -1688,18 +1695,65 @@
           h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, formatSize(item.bytes)),
           h('span', { style: { color: 'var(--dsw-alias-label-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, formatTime(item.importedAt)),
           h('span', {
-            style: { display: 'flex', gap: '4px', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'nowrap' },
+            style: { position: 'relative', display: 'flex', gap: '4px', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'nowrap' },
             onClick: (event) => { if (event && typeof event.stopPropagation === 'function') event.stopPropagation() },
           },
-            h('button', {
-              type: 'button',
-              style: { ...BTN, padding: '2px 9px', fontSize: '10px' },
-              title: t.externalOpen,
-              onClick: (event) => {
-                if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
-                if (typeof props.onExternal === 'function') props.onExternal(item, 'default')
+            h('div', { style: { display: 'flex', alignItems: 'center' } },
+              h('button', {
+                type: 'button',
+                style: { ...BTN, padding: '2px 7px', fontSize: '10px', borderTopRightRadius: 0, borderBottomRightRadius: 0 },
+                title: t.externalOpen,
+                onClick: (event) => {
+                  if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
+                  setMenuPath(null)
+                  if (typeof props.onExternal === 'function') props.onExternal(item, 'processed')
+                },
+              }, '📂 ' + t.externalOpen),
+              h('button', {
+                type: 'button',
+                style: { ...BTN, padding: '2px 5px', fontSize: '10px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0 },
+                title: t.galleryProcessed + ' / ' + t.galleryOriginal,
+                'aria-label': t.galleryProcessed + ' / ' + t.galleryOriginal,
+                onClick: (event) => {
+                  if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
+                  setMenuPath((prev) => prev === item.path ? null : item.path)
+                },
+              }, '▾'),
+            ),
+            menuPath === item.path ? h('div', {
+              style: {
+                position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 30,
+                minWidth: '136px', padding: '4px', boxSizing: 'border-box',
+                background: 'var(--dsw-alias-bg-layer-1)',
+                border: '1px solid var(--dsw-alias-border-l2)', borderRadius: '8px',
+                boxShadow: '0 6px 18px rgba(0,0,0,0.28)',
               },
-            }, '📂 ' + t.externalOpen),
+            },
+              h('button', {
+                type: 'button',
+                style: { ...BTN, display: 'block', width: '100%', textAlign: 'left', fontSize: '11px', marginBottom: '3px' },
+                onClick: (event) => {
+                  if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
+                  setMenuPath(null)
+                  if (typeof props.onExternal === 'function') props.onExternal(item, 'processed')
+                },
+              }, t.galleryProcessed),
+              h('button', {
+                type: 'button',
+                disabled: !item.original,
+                style: {
+                  ...BTN, display: 'block', width: '100%', textAlign: 'left', fontSize: '11px',
+                  opacity: item.original ? 1 : 0.45, cursor: item.original ? 'pointer' : 'not-allowed',
+                },
+                title: item.original || t.galleryOriginalMissing,
+                onClick: (event) => {
+                  if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
+                  if (!item.original) return
+                  setMenuPath(null)
+                  if (typeof props.onExternal === 'function') props.onExternal(item, 'original')
+                },
+              }, item.original ? t.galleryOriginal : t.galleryOriginalMissing),
+            ) : null,
             h(DeleteButton, {
               key: 'delete-row',
               payload: { path: item.path },
@@ -2332,7 +2386,10 @@
             h(CorpusGallery, {
               key: 'corpus-gallery',
               collections,
-              onExternal: (item, mode) => openExternal(item.path, mode),
+              onExternal: (item, target) => {
+                const path = target === 'original' && item.original ? item.original : item.path
+                openExternal(path, 'default')
+              },
               onDeleted: () => { loadOverview() },
             }),
             h('div', { style: GRID },
