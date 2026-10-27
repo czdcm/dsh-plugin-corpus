@@ -30,5 +30,5 @@
 ### 兼容性
 
 - 工具仍为 11 个，HTTP 路由为 20 条。
-- 客户端静态测试更新到 397 项。
+- 客户端静态测试更新到 388 项。
 - 项目源码采用 GPL-2.0-or-later；OfficeCLI Apache-2.0，Poppler/pdftotext GPL-2.0-or-later。

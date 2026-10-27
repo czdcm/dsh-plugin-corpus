@@ -1654,7 +1654,7 @@
 
         const tableHead = h('div', {
           style: {
-            display: 'grid', gridTemplateColumns: '34px minmax(160px, 1fr) 74px 82px 128px 118px',
+            display: 'grid', gridTemplateColumns: '34px minmax(160px, 1fr) 74px 82px 128px 174px',
             gap: '8px', alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid var(--dsw-alias-border-l2)',
             color: 'var(--dsw-alias-label-secondary)', fontSize: '11px', fontWeight: 600,
           },
@@ -1671,9 +1671,9 @@
           key: item.path,
           role: 'row',
           title: item.path,
-          onClick: () => props.onOpen(item),
+          onClick: () => { if (typeof props.onExternal === 'function') props.onExternal(item, 'default') },
           style: {
-            display: 'grid', gridTemplateColumns: '34px minmax(160px, 1fr) 74px 82px 128px 118px',
+            display: 'grid', gridTemplateColumns: '34px minmax(160px, 1fr) 74px 82px 128px 174px',
             gap: '8px', alignItems: 'center', padding: '5px 8px', cursor: 'pointer',
             borderBottom: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 45%, transparent)',
             fontSize: '12px', lineHeight: '18px',
@@ -1691,10 +1691,27 @@
             style: { display: 'flex', gap: '4px', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'nowrap' },
             onClick: (event) => { if (event && typeof event.stopPropagation === 'function') event.stopPropagation() },
           },
-            h('button', {
-              type: 'button', style: { ...BTN, padding: '2px 8px', fontSize: '11px' },
-              onClick: (event) => { if (event && typeof event.stopPropagation === 'function') event.stopPropagation(); props.onOpen(item) },
-            }, t.galleryOpen),
+            h('div', { style: { display: 'flex', alignItems: 'center' } },
+              h('button', {
+                type: 'button',
+                style: { ...BTN, padding: '2px 7px', fontSize: '10px', borderTopRightRadius: 0, borderBottomRightRadius: 0 },
+                title: t.externalOpen,
+                onClick: (event) => {
+                  if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
+                  if (typeof props.onExternal === 'function') props.onExternal(item, 'default')
+                },
+              }, '📂 ' + t.externalOpen),
+              h('button', {
+                type: 'button',
+                style: { ...BTN, padding: '2px 5px', fontSize: '10px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0 },
+                title: t.externalOpenChoose,
+                'aria-label': t.externalOpenChoose,
+                onClick: (event) => {
+                  if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
+                  if (typeof props.onExternal === 'function') props.onExternal(item, 'choose')
+                },
+              }, '▾'),
+            ),
             h(DeleteButton, {
               key: 'delete-row',
               payload: { path: item.path },
@@ -1956,13 +1973,9 @@
 
         const closePreview = () => setPreviewState({ loading: false, error: null, data: null, path: null })
 
-        const openExternal = (mode) => {
-          const path = previewState.path
-          if (path === null || path === undefined || path === '') return
-          postJson(API.openExternal, { path, mode: mode === 'choose' ? 'choose' : 'default' }).catch((error) => {
-            if (!mountedRef.current) return
-            setPreviewState((prev) => ({ ...prev, error: t.externalOpenFailed + errorText(error) }))
-          })
+        const openExternal = (path, mode) => {
+          if (typeof path !== 'string' || path === '') return
+          postJson(API.openExternal, { path, mode: mode === 'choose' ? 'choose' : 'default' }).catch(() => {})
         }
 
         const startReindex = (payload) => {
@@ -2331,7 +2344,7 @@
             h(CorpusGallery, {
               key: 'corpus-gallery',
               collections,
-              onOpen: (item) => openPreview(item.path, 1),
+              onExternal: (item, mode) => openExternal(item.path, mode),
               onDeleted: () => { loadOverview() },
             }),
             h('div', { style: GRID },
@@ -3407,10 +3420,6 @@
             && sidebarRight !== undefined && sidebarRight !== null && typeof sidebarRight.openTab === 'function'
             ? () => { sidebarRight.openTab('corpus-permissions'); return true }
             : null
-          previewOpenTab = tabs !== undefined && typeof tabs.register === 'function'
-            && sidebarRight !== undefined && sidebarRight !== null && typeof sidebarRight.openTab === 'function'
-            ? () => { sidebarRight.openTab(PREVIEW_TAB_ID); return true }
-            : null
 
           if (tabs !== undefined && typeof tabs.register === 'function') {
             ctx.effect(() => tabs.register({
@@ -3430,23 +3439,6 @@
               name: 'sidebar.right.pane.tab',
               key: PERMISSIONS_TAB_ID,
             }, PermissionsPanel)), 'dsh-corpus: permissions body')
-            ctx.effect(() => tabs.register({
-              id: PREVIEW_TAB_ID,
-              kind: PREVIEW_KIND,
-              priority: 'extension',
-              title: () => labelOf('previewTabTitle'),
-              guide: [{
-                id: PREVIEW_GUIDE_ID,
-                order: 56,
-                title: () => labelOf('previewTabTitle'),
-                description: () => labelOf('previewEmpty'),
-                icon: CorpusIcon,
-              }],
-            }), 'dsh-corpus: preview type')
-            ctx.effect(() => slots.inject('sidebar.right.pane.tab', () => slots.register({
-              name: 'sidebar.right.pane.tab',
-              key: PREVIEW_TAB_ID,
-            }, PreviewPanel)), 'dsh-corpus: preview body')
           }
         } catch (error) {
           try { console.error('[corpus] client apply failed:', error) } catch { /* 控制台不可用 */ }
