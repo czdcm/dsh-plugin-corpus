@@ -1,0 +1,4 @@
+# dsh-plugin-corpus 的组合补丁：一行宿主插件。
+- insert:
+    - id: corpus
+      name: dsh-plugin-corpus

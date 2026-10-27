@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "default": "deny",
+  "grants": [
+    {
+      "workspace": "C:/Users/<you>/work/project-a",
+      "paths": ["collection-a"]
+    },
+    {
+      "workspace": "C:/Users/<you>/work/project-b",
+      "paths": ["collection-b/guides", "collection-b/reference.md"]
+    }
+  ],
+  "deny": []
+}

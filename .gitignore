@@ -1,0 +1,12 @@
+﻿node_modules/
+.work/
+*.zip
+*.log
+
+# 随包第三方二进制：体积大，不入 git；plugin/vendor 本地保留，随交接 zip/部署拷贝
+plugin/vendor/officecli/*.exe
+plugin/vendor/pdftotext/*.exe
+plugin/vendor/pdftotext/*.dll
+
+# 本机权限配置（含工作区绝对路径）不入库；仓库带 example
+config/corpus-access.json

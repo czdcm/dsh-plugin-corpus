@@ -1,0 +1,21 @@
+pdftotext (Poppler / Xpdf utilities)
+====================================
+
+Vendored component for dsh-plugin-corpus:
+- Binary: `pdftotext.exe` plus MinGW runtime DLLs (Windows x64)
+- Upstream: https://poppler.freedesktop.org/ (Xpdf-derived utilities)
+- License: **GNU General Public License, version 2 or later** (see `LICENSE` in
+  this directory); the MinGW runtime libraries carry their own runtime
+  exceptions.
+- Origin of this binary: Git for Windows `mingw64/bin` copy, 2026-10-26.
+
+Usage: local PDF text extraction only. If a text layer exists, `pdftotext`
+extracts it quickly; if it is missing or empty, dsh-plugin-corpus falls back to
+its pure-JS PDF reader, then to the packaged Windows OCR script.
+
+**Redistribution:** the project is GPL-2.0-or-later and the default plugin zip
+includes this binary together with `LICENSE` and `SOURCE-OFFER.txt`. If you
+redistribute this build, keep those files and satisfy the GPL's source
+availability requirements. A `-PublicSafe` package that excludes these binaries
+is available for environments that do not want to redistribute GPL executables.
+The pure-JS PDF reader and Windows OCR remain available without it.

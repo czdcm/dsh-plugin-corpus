@@ -1,0 +1,18 @@
+OfficeCLI (officecli.exe)
+=========================
+
+Vendored component for dsh-plugin-corpus:
+- Binary: `officecli.exe` (Windows x64, v1.0.157)
+- Upstream: https://github.com/officecli/officecli
+- Product page: https://officecli.ai
+- License: **Apache License 2.0** (see `LICENSE` in this directory)
+- Copyright: OfficeCLI / iOfficeAI contributors. This directory does not claim
+  ownership of the binary; it is redistributed under the Apache-2.0 terms.
+
+dsh-plugin-corpus uses officecli only to read Office documents as text
+(`officecli view <file> text --json` followed by `officecli close`); it does not
+modify documents. If the binary is absent or fails, the plugin falls back to its
+bundled pure-JS Office reader (`lib/office.js`).
+
+Public distribution: the binary may be included with this NOTICE and the
+Apache-2.0 `LICENSE`; do not remove those files.

@@ -1,0 +1,22 @@
+pdftotext / Poppler — GPL-2.0-or-later source offer
+==================================================
+
+The bundled `pdftotext.exe` and MinGW runtime DLLs are distributed under the
+GNU General Public License, version 2 or later (see `LICENSE`).
+
+Corresponding source code:
+- Poppler (PDF library and pdftotext utility): https://poppler.freedesktop.org/
+- Poppler source releases: https://poppler.freedesktop.org/releases.html
+- The exact upstream release used for this Windows build can be requested from
+  the maintainer of this repository; include a written request via the
+  repository issue tracker or the contact address in the repository profile.
+
+This offer is made in connection with the distribution of the binary in this
+folder and is valid for at least three years from the date of distribution.
+If you redistribute this build, keep this file and `LICENSE` together with the
+binary, and comply with the GPL's source-availability requirements.
+
+The rest of dsh-plugin-corpus is licensed GPL-2.0-or-later as well; its source is
+the repository containing this plugin. OfficeCLI is Apache-2.0 (see the
+`vendor/officecli` folder); Apache-2.0 is compatible with GPL-3.0, and the
+project's "or later" option allows that combination when required.

@@ -1,0 +1,4 @@
+{
+  "version": 1,
+  "defaults": { "backend": "like", "maxFileBytes": 4194304, "extensions": [".md", ".markdown", ".mdx", ".txt", ".rst", ".text"] }
+}
