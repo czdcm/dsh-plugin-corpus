@@ -338,6 +338,8 @@
           galleryProcessed: '处理后语料（默认）',
           galleryOriginal: '原文件',
           galleryOriginalMissing: '无原文件',
+          galleryDefaultOpen: '用默认程序直接打开',
+          galleryChooseWith: '选择软件打开',
           galleryNoDocs: '还没有可展示的语料；用「导入语料」或在主会话里调用 corpus_structure 后，这里会出现文件列表。',
           reindexHelpTitle: '重建按钮说明',
           reindexHelpIntro: '两个按钮都会重建当前有权限集合的索引，但成本不同：',
@@ -617,6 +619,8 @@
           galleryProcessed: 'Processed (default)',
           galleryOriginal: 'Original file',
           galleryOriginalMissing: 'No original file',
+          galleryDefaultOpen: 'Open with default app',
+          galleryChooseWith: 'Open with…',
           galleryNoDocs: 'No corpus documents yet. Import files or call corpus_structure in the main session, then files will appear here.',
           reindexHelpTitle: 'Rebuild button help',
           reindexHelpIntro: 'Both buttons rebuild indexes for collections you can access, with different costs:',
@@ -1702,11 +1706,11 @@
               h('button', {
                 type: 'button',
                 style: { ...BTN, padding: '2px 7px', fontSize: '10px', borderTopRightRadius: 0, borderBottomRightRadius: 0 },
-                title: t.externalOpen,
+                title: t.externalOpen + '（' + t.galleryProcessed + '）',
                 onClick: (event) => {
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
                   setMenuPath(null)
-                  if (typeof props.onExternal === 'function') props.onExternal(item, 'processed')
+                  if (typeof props.onExternal === 'function') props.onExternal(item, 'processed', 'choose')
                 },
               }, '📂 ' + t.externalOpen),
               h('button', {
@@ -1723,21 +1727,22 @@
             menuPath === item.path ? h('div', {
               style: {
                 position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 30,
-                minWidth: '136px', padding: '4px', boxSizing: 'border-box',
+                minWidth: '190px', padding: '5px', boxSizing: 'border-box',
                 background: 'var(--dsw-alias-bg-layer-1)',
                 border: '1px solid var(--dsw-alias-border-l2)', borderRadius: '8px',
                 boxShadow: '0 6px 18px rgba(0,0,0,0.28)',
               },
             },
+              h('div', { style: { ...SMALL, padding: '2px 6px 5px', color: 'var(--dsw-alias-label-secondary)' } }, t.galleryChooseWith),
               h('button', {
                 type: 'button',
                 style: { ...BTN, display: 'block', width: '100%', textAlign: 'left', fontSize: '11px', marginBottom: '3px' },
                 onClick: (event) => {
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
                   setMenuPath(null)
-                  if (typeof props.onExternal === 'function') props.onExternal(item, 'processed')
+                  if (typeof props.onExternal === 'function') props.onExternal(item, 'processed', 'choose')
                 },
-              }, t.galleryProcessed),
+              }, t.galleryProcessed + '…'),
               h('button', {
                 type: 'button',
                 disabled: !item.original,
@@ -1750,9 +1755,19 @@
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
                   if (!item.original) return
                   setMenuPath(null)
-                  if (typeof props.onExternal === 'function') props.onExternal(item, 'original')
+                  if (typeof props.onExternal === 'function') props.onExternal(item, 'original', 'choose')
                 },
-              }, item.original ? t.galleryOriginal : t.galleryOriginalMissing),
+              }, item.original ? t.galleryOriginal + '…' : t.galleryOriginalMissing),
+              h('div', { style: { height: '1px', margin: '5px 2px', background: 'var(--dsw-alias-border-l2)' } }),
+              h('button', {
+                type: 'button',
+                style: { ...BTN, display: 'block', width: '100%', textAlign: 'left', fontSize: '11px' },
+                onClick: (event) => {
+                  if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
+                  setMenuPath(null)
+                  if (typeof props.onExternal === 'function') props.onExternal(item, 'processed', 'default')
+                },
+              }, t.galleryDefaultOpen),
             ) : null,
             h(DeleteButton, {
               key: 'delete-row',
@@ -2386,9 +2401,9 @@
             h(CorpusGallery, {
               key: 'corpus-gallery',
               collections,
-              onExternal: (item, target) => {
+              onExternal: (item, target, mode) => {
                 const path = target === 'original' && item.original ? item.original : item.path
-                openExternal(path, 'default')
+                openExternal(path, mode === 'default' ? 'default' : 'choose')
               },
               onDeleted: () => { loadOverview() },
             }),

@@ -485,10 +485,11 @@ function staticChecks() {
     && SOURCE.indexOf('t.galleryAi') !== -1)
   ok('语料文件接入主页面（外部打开；行删除回调刷新 overview；旧 OriginalGallery 不渲染）',
     SOURCE.indexOf('h(CorpusGallery,') !== -1
-    && SOURCE.indexOf('onExternal: (item, target) =>') !== -1
+    && SOURCE.indexOf('onExternal: (item, target, mode) =>') !== -1
     && SOURCE.indexOf("target === 'original' && item.original") !== -1
-    && SOURCE.indexOf("props.onExternal(item, 'processed')") !== -1
-    && SOURCE.indexOf("props.onExternal(item, 'original')") !== -1
+    && SOURCE.indexOf("props.onExternal(item, 'processed', 'choose')") !== -1
+    && SOURCE.indexOf("props.onExternal(item, 'original', 'choose')") !== -1
+    && SOURCE.indexOf("props.onExternal(item, 'processed', 'default')") !== -1
     && SOURCE.indexOf('onDeleted: () => { loadOverview() }') !== -1
     && SOURCE.indexOf('dsh-corpus-originals-changed') !== -1
     && SOURCE.indexOf('h(OriginalGallery,') === -1)

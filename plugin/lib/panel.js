@@ -841,16 +841,28 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
       const resolved = resolveCorpusFile(root, body && body.path)
       if (resolved === null) { sendJson(res, 400, { ok: false, error: 'path 必须是语料根内的文件' }); return }
       const powershell = findPowerShell()
-      if (powershell === null) { sendJson(res, 500, { ok: false, error: 'Windows PowerShell 不可用' }); return }
+      const mode = body && body.mode === 'choose' ? 'choose' : 'default'
+      if (powershell === null) {
+        sendJson(res, 500, { ok: false, error: 'Windows PowerShell 不可用' }); return
+      }
       try {
-        // 通过环境变量传路径，避免路径中的空格/引号进入命令行字符串。
-        // Start-Process 使用 Windows 文件关联，比 rundll32 url.dll 更可靠。
-        execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command',
-          'Start-Process -FilePath $env:DSH_CORPUS_OPEN_FILE'], {
-          windowsHide: true,
-          env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs },
-        }, () => {})
-        sendJson(res, 200, { ok: true, path: resolved.rel })
+        if (mode === 'choose') {
+          // Windows「打开方式」对话框；用户选择已安装的软件。
+          execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command',
+            "Start-Process -FilePath rundll32.exe -ArgumentList 'shell32.dll,OpenAs_RunDLL', $env:DSH_CORPUS_OPEN_FILE"], {
+            windowsHide: true,
+            env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs },
+          }, () => {})
+        } else {
+          // 通过环境变量传路径，避免路径中的空格/引号进入命令行字符串。
+          // Start-Process 使用 Windows 文件关联，比 rundll32 url.dll 更可靠。
+          execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command',
+            'Start-Process -FilePath $env:DSH_CORPUS_OPEN_FILE'], {
+            windowsHide: true,
+            env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs },
+          }, () => {})
+        }
+        sendJson(res, 200, { ok: true, path: resolved.rel, mode })
       } catch (error) {
         sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) })
       }
