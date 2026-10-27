@@ -1691,27 +1691,15 @@
             style: { display: 'flex', gap: '4px', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'nowrap' },
             onClick: (event) => { if (event && typeof event.stopPropagation === 'function') event.stopPropagation() },
           },
-            h('div', { style: { display: 'flex', alignItems: 'center' } },
-              h('button', {
-                type: 'button',
-                style: { ...BTN, padding: '2px 7px', fontSize: '10px', borderTopRightRadius: 0, borderBottomRightRadius: 0 },
-                title: t.externalOpen,
-                onClick: (event) => {
-                  if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
-                  if (typeof props.onExternal === 'function') props.onExternal(item, 'default')
-                },
-              }, '📂 ' + t.externalOpen),
-              h('button', {
-                type: 'button',
-                style: { ...BTN, padding: '2px 5px', fontSize: '10px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0 },
-                title: t.externalOpenChoose,
-                'aria-label': t.externalOpenChoose,
-                onClick: (event) => {
-                  if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
-                  if (typeof props.onExternal === 'function') props.onExternal(item, 'choose')
-                },
-              }, '▾'),
-            ),
+            h('button', {
+              type: 'button',
+              style: { ...BTN, padding: '2px 9px', fontSize: '10px' },
+              title: t.externalOpen,
+              onClick: (event) => {
+                if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
+                if (typeof props.onExternal === 'function') props.onExternal(item, 'default')
+              },
+            }, '📂 ' + t.externalOpen),
             h(DeleteButton, {
               key: 'delete-row',
               payload: { path: item.path },
