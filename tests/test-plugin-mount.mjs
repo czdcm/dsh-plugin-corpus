@@ -1,7 +1,7 @@
 // dsh-plugin-corpus v1.5 — 插件入口集成测试（Cordis 桩）。
 //
 // 目的：验证 plugin/lib/index.js 的 apply() 真的能把 10 个工具、systemPrompt 注入、
-// webServer 20 条路由挂起来，并用临时语料跑通「自动建索引 → 检索 → 读取 → 导入 → 异步重建
+// webServer 17 条路由挂起来，并用临时语料跑通「自动建索引 → 检索 → 读取 → 导入 → 异步重建
 // → corpus_ingest 摄取 → v1.4 corpus_structure / corpus_summarize_session 主会话接口
 // → v1.5 /settings 根目录 API」的工具闭环。
 // 不依赖 DSH 运行时：把 lib/ 复制到临时目录，在它的 node_modules 下放
@@ -144,7 +144,7 @@ try {
     deriveMessages() {
       return [
         { role: 'user', content: [{ type: 'text', text: '请把这次 mount 测试总结进语料' }], source: { kind: 'user' } },
-        { role: 'assistant', content: [{ type: 'text', text: '已完成 10 个工具与 20 条路由的挂载验证' }] },
+        { role: 'assistant', content: [{ type: 'text', text: '已完成 10 个工具与 17 条路由的挂载验证' }] },
       ]
     },
   }
@@ -162,12 +162,12 @@ try {
   }
   ok('apply 注册 11 个工具（v1.3 的 8 + v1.4 的 corpus_structure / corpus_summarize_session）')
 
-  assert(fake.routes.length === 20, '注册 20 条面板路由，实际 ' + fake.routes.length)
+  assert(fake.routes.length === 17, '注册 17 条面板路由，实际 ' + fake.routes.length)
   assert(fake.routes.every((route) => route.kind === 'exact' && route.path.startsWith('/api/dsh-plugin-corpus/')), '面板路由形状')
-  for (const suffix of ['access', 'import/targets', 'import', 'import/status', 'originals', 'original', 'thumbnail', 'settings', 'settings/root', 'settings/open', 'gallery', 'delete']) {
+  for (const suffix of ['access', 'import/targets', 'import', 'import/status', 'settings', 'settings/root', 'settings/open', 'gallery', 'delete']) {
     assert(fake.routes.some((route) => route.path === '/api/dsh-plugin-corpus/' + suffix), '缺少路由 ' + suffix)
   }
-  ok('apply 挂载 19 条 /api/dsh-plugin-corpus 路由（含 /access、v1.3 /import/* 与原件/缩略图）')
+  ok('apply 挂载 17 条 /api/dsh-plugin-corpus 路由（含 /access、v1.3 /import/*）')
 
   const invokePanel = (method, url, body, headers = {}) => new Promise((resolve, reject) => {
     const route = fake.routes.find((item) => item.path === url.split('?')[0])
@@ -201,11 +201,6 @@ try {
   assert(targetsRes.body.visionAvailable === false, '假 ctx 无 attachments，visionAvailable 应为 false')
   assert(targetsRes.body.limits.maxFiles === 200 && targetsRes.body.limits.maxUploadBytes === 25 * 1024 * 1024, '/import/targets 默认 limits')
   ok('apply 的 /import/targets 返回 formats / extractors{7} / ai·vision 可用性 / limits')
-
-  const originalsEmpty = await invokePanel('GET', '/api/dsh-plugin-corpus/originals')
-  assert(originalsEmpty.status === 200 && originalsEmpty.body.ok === true && originalsEmpty.body.total === 0, '/originals 导入前应 200 且为空：' + JSON.stringify(originalsEmpty.body))
-  assert(Array.isArray(originalsEmpty.body.collections) && originalsEmpty.body.collections.some((item) => item.name === 'alpha'), '/originals 带集合候选')
-  ok('apply 的 /originals 路由可用（导入前空列表）')
 
   assert(fake.promptContexts.length === 1 && fake.promptContexts[0].name === 'corpus.index', 'systemPrompt.context')
   ok('apply 注入 systemPrompt 上下文')
@@ -287,13 +282,13 @@ try {
   const ingestJob = await waitIngestDone()
   assert(ingestJob.id === ingested.jobId && ingestJob.state === 'done' && ingestJob.done === 1 && ingestJob.failed === 0, 'corpus_ingest 任务应 done（1/1）：' + JSON.stringify(ingestJob))
   assert(Array.isArray(ingestJob.items) && ingestJob.items[0].ok === true && ingestJob.items[0].aiStructured === false, 'corpus_ingest item：成功 + 无 AI 时 aiStructured=false')
-  // v1.3 最终布局：每条导入一个文件夹，items[].target → processed/，原件在 originals/
+  // 每条导入一个文件夹，items[].target → processed/，不保存原件。
   const ingestItem = ingestJob.items[0]
-  assert(String(ingestItem.target).includes('/processed/') && String(ingestItem.original).includes('/originals/'), 'corpus_ingest item 应指向 processed/ 与 originals/：' + JSON.stringify(ingestItem))
+  assert(String(ingestItem.target).includes('/processed/') && ingestItem.original === undefined, 'corpus_ingest item 只应指向 processed/：' + JSON.stringify(ingestItem))
   assert(fs.existsSync(path.join(root, ...ingestItem.target.split('/'))), 'processed Markdown 应落盘')
-  assert(fs.existsSync(path.join(root, ...ingestItem.original.split('/'))), '原件应入档到 originals/')
+  assert(!fs.existsSync(path.join(root, 'alpha', ingestItem.folder, 'originals')), '不应创建 originals/')
   assert(fs.existsSync(path.join(root, 'alpha', ingestItem.folder, '.meta.json')), '导入文件夹应有 .meta.json')
-  ok('corpus_ingest 布局：每导入一文件夹（originals/ + processed/ + .meta.json）')
+  ok('corpus_ingest 布局：每导入一文件夹（processed/ + .meta.json，不保存源文件）')
   await waitIdle()
   ok('corpus_ingest：相对工作区导入 → 后台任务 running→done → 自动重建')
 
@@ -309,24 +304,24 @@ try {
   assert(structured.ok === true && structured.imported === true && structured.kind === 'file', 'corpus_structure 应同步导入文件：' + JSON.stringify(structured))
   assert(typeof structured.target === 'string' && structured.target.includes('/processed/'), 'corpus_structure 应返回 processed target：' + structured.target)
   assert(fs.existsSync(path.join(root, ...structured.target.split('/'))), 'corpus_structure processed Markdown 应落盘')
-  assert(String(structured.original).includes('/originals/imported.md'), 'corpus_structure 应把原件复制到 originals/：' + structured.original)
+  assert(structured.original === undefined, 'corpus_structure 不再保存原件：' + structured.original)
   assert(typeof structured.reindexJobId === 'string' && structured.reindexJobId !== '', 'corpus_structure 应触发重建并返回 reindexJobId')
   assert(String(structured.body).includes('# 集成结构化结果'), 'corpus_structure 应同步返回结构化 Markdown body')
   await waitIdle()
   const foundStructured = await call('corpus_search', { query: '集成结构化结果' })
   assert(foundStructured.ok === true && foundStructured.hits.some((hit) => hit.path === structured.target), 'corpus_structure 写入的内容重建后可检索：' + JSON.stringify(foundStructured.hits || []))
-  ok('corpus_structure：同步结构化 → processed/originals → 自动重建 → 可检索')
+  ok('corpus_structure：同步结构化 → processed → 自动重建 → 可检索（不保存原件）')
 
   // v1.4：corpus_summarize_session 读取当前会话公开投影并落盘
   const summarized = await call('corpus_summarize_session', { collection: 'alpha', instructions: '保留测试输出' })
   assert(summarized.ok === true && summarized.imported === true && summarized.kind === 'session', 'corpus_summarize_session 应导入会话总结：' + JSON.stringify(summarized))
   assert(summarized.sessionId === 'session-mount', '会话总结应记录当前会话 id')
   assert(summarized.transcript && summarized.transcript.included === 2, 'transcript 统计应纳入 2 条可见消息，实际 ' + JSON.stringify(summarized.transcript))
-  assert(String(summarized.original).endsWith('/originals/session-transcript.md'), '会话总结应写 originals/session-transcript.md：' + summarized.original)
+  assert(summarized.original === undefined, '会话总结不再保存原件：' + summarized.original)
   assert(fs.readFileSync(path.join(root, ...String(summarized.target).split('/')), 'utf8').includes('sessionId: "session-mount"'), '会话总结 front matter 应含 sessionId')
   assert(typeof summarized.reindexJobId === 'string' && summarized.reindexJobId !== '', '会话总结应触发重建并返回 reindexJobId')
   await waitIdle()
-  ok('corpus_summarize_session：会话投影 → processed + originals/session-transcript.md + 自动重建')
+  ok('corpus_summarize_session：会话投影 → processed + 自动重建（不保存原件）')
 
   assert(fakeLlm.calls.length === 2, '两个 v1.4 工具各应调用一次内置小代理，实际 ' + fakeLlm.calls.length)
   assert(String(fakeLlm.calls[0].system || '').includes('语料摄取小代理'), 'corpus_structure（单文件）用默认摄取 system prompt')

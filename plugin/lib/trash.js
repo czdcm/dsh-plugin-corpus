@@ -2,7 +2,7 @@
  * dsh-plugin-corpus v1.7 — 删除语料（软删除到 .corpus/trash，可人工恢复）。
  *
  * 删除单篇：如果 processed 文件属于 v1.3 的每导入一文件夹布局，连整个导入文件夹
- * （originals/processed/.meta.json）一起移到 trash；旧版平铺文本只移该文件。
+ * （processed/.meta.json）一起移到 trash；旧版平铺文本只移该文件。
  * 删除集合：整个集合目录移到 trash/collections/ 下，并清掉该集合的索引文件。
  */
 import fs from 'node:fs'
@@ -47,7 +47,7 @@ function moveToTrash(root, relTarget, label) {
   return path.relative(root, destination).replace(/\\/g, '/')
 }
 
-/** 删除一篇 processed 语料（导入文件夹布局时连原件一起）。 */
+/** 删除一篇 processed 语料（导入文件夹布局时连遗留原件一起）。 */
 export function deleteDocument(root, relPath) {
   const rel = String(relPath || '').replace(/\\/g, '/')
   const parts = rel.split('/')

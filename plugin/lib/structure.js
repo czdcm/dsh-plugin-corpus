@@ -5,10 +5,10 @@
  * 抓取一段文本，然后调用 corpus_structure 工具；本模块负责：
  *   · 扫描仓库/目录/文件/文本，生成适合单轮模型读取的摘要材料；
  *   · 调用内置摄取小代理做总结/结构化；
- *   · 按 per-import 布局写 originals/ + processed/ + .meta.json；
+ *   · 按 per-import 布局写 processed/ + .meta.json；源文件由用户自行管理；
  *   · 触发集合重建，并把 Markdown 结果直接返回给主会话。
  *
- * 模型永远只读 processed；originals 只保留来源快照，供人查看/追溯。
+ * 模型永远只读 processed。
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -323,7 +323,7 @@ function buildFileDigest(file, extracted, options) {
   }
 }
 
-function frontMatter({ title, source, kind, collection, importedAt, original, instructions, aiStructured, stats, sessionId, git }) {
+function frontMatter({ title, source, kind, collection, importedAt, instructions, aiStructured, stats, sessionId, git }) {
   const lines = [
     '---',
     `title: ${yamlString(title)}`,
@@ -334,7 +334,6 @@ function frontMatter({ title, source, kind, collection, importedAt, original, in
     `collection: ${yamlString(collection)}`,
     `aiStructured: ${aiStructured ? 'true' : 'false'}`,
   ]
-  if (original) lines.push(`original: ${yamlString(original)}`)
   if (sessionId) lines.push(`sessionId: ${yamlString(sessionId)}`)
   if (git && git.remote) lines.push(`gitRemote: ${yamlString(git.remote)}`)
   if (git && git.branch) lines.push(`gitBranch: ${yamlString(git.branch)}`)
@@ -384,7 +383,6 @@ export function createStructureService({ root, agent, config, log, reindex }) {
     let git = null
     let stats = null
     let warnings = []
-    let originalCopy = null
     let repoScan = null
 
     if (sourceText !== '') {
@@ -462,35 +460,8 @@ export function createStructureService({ root, agent, config, log, reindex }) {
     }
     const folderRel = path.posix.join(collection, prefix === '' ? folderName : `${prefix}/${folderName}`)
     const folderAbs = path.join(root, ...folderRel.split('/'))
-    const originalsDir = path.join(folderAbs, 'originals')
     const processedDir = path.join(folderAbs, 'processed')
-    fs.mkdirSync(originalsDir, { recursive: true })
     fs.mkdirSync(processedDir, { recursive: true })
-
-    if (kind === 'repo') {
-      const manifest = {
-        kind: 'repository',
-        sourcePath: sourceLabel,
-        git,
-        scannedAt: importedAt,
-        totalFiles: repoScan ? repoScan.files.length : 0,
-        stats,
-        files: repoScan ? repoScan.files.slice(0, MAX_LIST_FILES).map((file) => ({ path: file.rel, bytes: file.size })) : [],
-      }
-      fs.writeFileSync(path.join(originalsDir, 'repo.json'), JSON.stringify(manifest, null, 2), 'utf8')
-      const readme = repoScan ? repoScan.files.find((file) => /^readme(\.|$)/i.test(file.name) && file.size <= 512 * 1024) : null
-      if (readme) {
-        try { fs.copyFileSync(readme.abs, path.join(originalsDir, safeName(readme.name))) } catch { /* 读不到就不存快照 */ }
-      }
-      originalCopy = path.posix.join(folderRel, 'originals', 'repo.json')
-    } else if (kind === 'file') {
-      const originalName = safeName(path.basename(sourceLabel))
-      try { fs.copyFileSync(sourceLabel, path.join(originalsDir, originalName)); originalCopy = path.posix.join(folderRel, 'originals', originalName) } catch { /* 原件缺失不阻塞 */ }
-    } else {
-      const originalName = kind === 'session' ? 'session-transcript.md' : 'input.md'
-      fs.writeFileSync(path.join(originalsDir, originalName), sourceText, 'utf8')
-      originalCopy = path.posix.join(folderRel, 'originals', originalName)
-    }
 
     const slug = slugOf(finalTitle, 'structured')
     let target = path.join(processedDir, slug + '.md')
@@ -506,7 +477,6 @@ export function createStructureService({ root, agent, config, log, reindex }) {
       kind,
       collection,
       importedAt,
-      original: originalCopy,
       instructions,
       aiStructured: true,
       stats,
@@ -522,7 +492,6 @@ export function createStructureService({ root, agent, config, log, reindex }) {
         folder: folderName,
         prefix,
         source: sourceLabel,
-        original: originalCopy,
         processed: relTarget,
         title: finalTitle,
         format: kind === 'repo' ? 'repository' : kind,
@@ -553,7 +522,6 @@ export function createStructureService({ root, agent, config, log, reindex }) {
       title: finalTitle,
       source: sourceLabel,
       target: relTarget,
-      original: originalCopy,
       folder: folderName,
       collection,
       prefix,

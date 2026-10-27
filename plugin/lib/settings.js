@@ -6,7 +6,7 @@
  *   2. config.corpusRoot
  *   3. <DSH_HOME>/corpus
  *
- * 迁移目标：把整个根目录（集合、.corpus/index、originals、thumbs 等）搬到新位置。
+ * 迁移目标：把整个根目录（集合、.corpus/index、thumbs 等）搬到新位置。
  * 同卷且支持目录联接时：rename + 旧路径 junction → 新路径，当前进程无需重启；
  * 否则：复制到新路径并保留旧路径，写 state 后提示重启，重启后使用新根目录。
  */

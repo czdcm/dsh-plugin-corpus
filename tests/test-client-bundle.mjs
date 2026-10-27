@@ -450,9 +450,9 @@ function staticChecks() {
     .every((text) => SOURCE.indexOf(text) !== -1))
   // v1.8/v1.9：语料文件按集合分组、资源管理器列表；已知扩展名用对应文件图标（未知回退前 4 字符），
   // 不再用文字预览；集合组默认折叠（▸/▾、全部展开/折叠、过滤自动展开），行内可两击删除。
-  ok('语料文件 API（/gallery + /thumbnail、1000 篇上限、集合过滤）',
+  ok('语料文件 API（/gallery、1000 篇上限、集合过滤）',
     SOURCE.indexOf("gallery: '/api/dsh-plugin-corpus/gallery'") !== -1
-    && SOURCE.indexOf("thumbnail: '/api/dsh-plugin-corpus/thumbnail'") !== -1
+    && SOURCE.indexOf("thumbnail: '/api/dsh-plugin-corpus/thumbnail'") === -1
     && SOURCE.indexOf('getJson(API.gallery + query)') !== -1
     && SOURCE.indexOf("'?limit=1000'") !== -1
     && SOURCE.indexOf("'&collection=' + encodeURIComponent(collection)") !== -1)
@@ -483,15 +483,12 @@ function staticChecks() {
     && SOURCE.indexOf('item.excerpt') === -1
     && SOURCE.indexOf('t.galleryCount(data.total, data.shown)') !== -1
     && SOURCE.indexOf('t.galleryAi') !== -1)
-  ok('语料文件接入主页面（外部打开；行删除回调刷新 overview；旧 OriginalGallery 不渲染）',
+  ok('语料文件接入主页面（默认外部打开 + 选择软件；行删除回调刷新 overview；旧 OriginalGallery 不渲染）',
     SOURCE.indexOf('h(CorpusGallery,') !== -1
-    && SOURCE.indexOf('onExternal: (item, target, mode) =>') !== -1
-    && SOURCE.indexOf("target === 'original' && item.original") !== -1
-    && SOURCE.indexOf("props.onExternal(item, 'processed', 'choose')") !== -1
-    && SOURCE.indexOf("props.onExternal(item, 'original', 'choose')") !== -1
-    && SOURCE.indexOf("props.onExternal(item, 'processed', 'default')") !== -1
+    && SOURCE.indexOf('onExternal: (item, mode) =>') !== -1
+    && SOURCE.indexOf("props.onExternal(item, 'default')") !== -1
+    && SOURCE.indexOf("props.onExternal(item, 'choose')") !== -1
     && SOURCE.indexOf('onDeleted: () => { loadOverview() }') !== -1
-    && SOURCE.indexOf('dsh-corpus-originals-changed') !== -1
     && SOURCE.indexOf('h(OriginalGallery,') === -1)
   ok('重建按钮带圈问号说明（? 圆形按钮 + 展开/收起文案）',
     SOURCE.indexOf('function ReindexHelp()') !== -1

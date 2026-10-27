@@ -14,11 +14,9 @@
  *     ACL 视角与编辑策略。
  */
 import { authorize, normalize } from './access.js'
-import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
 import { findPowerShell } from './pdf.js'
 import {
   collectionNames,
@@ -39,30 +37,11 @@ import { deleteCollection, deleteDocument } from './trash.js'
 export { policySummary }
 
 export const PANEL_PREFIX = '/api/dsh-plugin-corpus'
-const HERE = path.dirname(fileURLToPath(import.meta.url))
-
-/** 解析一个 root 内的原件路径；越界/非法返回 null。 */
-function resolveOriginalPath(root, relPath) {
-  const rel = String(relPath || '').replace(/\\/g, '/')
-  const parts = rel.split('/')
-  if (rel === '' || parts.some((part) => part === '' || part === '..') || !parts.includes('originals')) return null
-  const rootAbs = path.resolve(root)
-  const abs = path.resolve(rootAbs, rel)
-  if (!(abs === rootAbs || abs.startsWith(rootAbs + path.sep))) return null
-  let stat
-  try { stat = fs.lstatSync(abs) } catch { return null }
-  if (!stat.isFile() || stat.isSymbolicLink()) return null
-  let real
-  try { real = fs.realpathSync(abs) } catch { return null }
-  const relReal = path.relative(fs.realpathSync(rootAbs), real)
-  if (relReal.startsWith('..') || path.isAbsolute(relReal)) return null
-  return { rel, abs, stat }
-}
 
 function resolveCorpusFile(root, relPath) {
   const rel = String(relPath || '').replace(/\\/g, '/')
   const parts = rel.split('/')
-  if (rel === '' || parts.some((part) => part === '' || part === '..' || part === '.')) return null
+  if (rel === '' || parts.some((part) => part === '' || part === '..' || part === '.') || !parts.includes('processed')) return null
   const rootAbs = path.resolve(root)
   const abs = path.resolve(rootAbs, rel)
   if (!(abs === rootAbs || abs.startsWith(rootAbs + path.sep))) return null
@@ -74,30 +53,6 @@ function resolveCorpusFile(root, relPath) {
   const relReal = path.relative(fs.realpathSync(rootAbs), real)
   if (relReal.startsWith('..') || path.isAbsolute(relReal)) return null
   return { rel, abs, stat }
-}
-
-function sendFileBuffer(res, contentType, buffer, options = {}) {
-  res.statusCode = options.status || 200
-  res.setHeader('content-type', contentType || 'application/octet-stream')
-  res.setHeader('content-length', String(buffer.length))
-  res.setHeader('cache-control', options.cacheControl || 'private, max-age=3600')
-  res.end(buffer)
-}
-
-function runThumbnail(file, size, outFile) {
-  return new Promise((resolve, reject) => {
-    const powershell = findPowerShell()
-    if (powershell === null) { reject(new Error('Windows PowerShell 不可用')); return }
-    const script = path.join(HERE, 'thumb_windows.ps1')
-    if (!fs.existsSync(script)) { reject(new Error('缺少 thumb_windows.ps1')); return }
-    execFile(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script,
-      '-Path', file, '-Size', String(size), '-OutFile', outFile], {
-      encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 120000, windowsHide: true,
-    }, (error, stdout) => {
-      if (error) { reject(error); return }
-      try { resolve(JSON.parse(String(stdout || '').trim())) } catch (parseError) { reject(parseError) }
-    })
-  })
 }
 
 function sendJson(res, status, payload) {
@@ -161,106 +116,13 @@ function collectionChoices(root) {
   }))
 }
 
-const IMAGE_MEDIA = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-  '.bmp': 'image/bmp',
-  '.tif': 'image/tiff',
-  '.tiff': 'image/tiff',
-  '.heic': 'image/heic',
-  '.heif': 'image/heif',
-}
-
-function mediaTypeOf(file) {
-  return IMAGE_MEDIA[path.extname(String(file || '')).toLowerCase()] || 'application/octet-stream'
-}
-
-function isImageFile(file) {
-  return Object.prototype.hasOwnProperty.call(IMAGE_MEDIA, path.extname(String(file || '')).toLowerCase())
-}
-
 function readJsonFile(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return null }
 }
 
 /**
- * 扫描导入文件夹里的原件（每条导入一个文件夹：originals/ + processed/）。
- * 同时兼容 v1.2 的 <root>/.corpus/originals 旧布局。
+ * 语料文件列表：只展示 processed 文档，不再关联原件或缩略图。
  */
-function listOriginals(root, collectionFilter = '') {
-  const entries = []
-  const names = collectionNames(root).filter((name) => collectionFilter === '' || name === collectionFilter)
-  for (const collection of names) {
-    const collectionDir = path.join(root, collection)
-    let children = []
-    try { children = fs.readdirSync(collectionDir, { withFileTypes: true }) } catch { children = [] }
-    for (const child of children) {
-      if (!child.isDirectory() || child.name.startsWith('.')) continue
-      const folderDir = path.join(collectionDir, child.name)
-      const originalsDir = path.join(folderDir, 'originals')
-      if (!fs.existsSync(originalsDir)) continue
-      const meta = readJsonFile(path.join(folderDir, '.meta.json'))
-      let files = []
-      try { files = fs.readdirSync(originalsDir, { withFileTypes: true }).filter((item) => item.isFile() && !item.name.startsWith('.')) } catch { files = [] }
-      for (const file of files) {
-        const abs = path.join(originalsDir, file.name)
-        let stat = null
-        try { stat = fs.statSync(abs) } catch { continue }
-        entries.push({
-          collection,
-          folder: child.name,
-          name: file.name,
-          original: path.posix.join(collection, child.name, 'originals', file.name),
-          processed: meta && typeof meta.processed === 'string' ? meta.processed : null,
-          title: meta && typeof meta.title === 'string' ? meta.title : file.name,
-          format: path.extname(file.name).slice(1).toLowerCase(),
-          mediaType: mediaTypeOf(file.name),
-          image: isImageFile(file.name),
-          bytes: stat.size,
-          mtimeMs: stat.mtimeMs,
-          importedAt: meta && typeof meta.importedAt === 'string' ? meta.importedAt : new Date(stat.mtimeMs).toISOString(),
-          aiStructured: Boolean(meta && meta.aiStructured),
-        })
-      }
-    }
-  }
-  // 旧布局兼容：<root>/.corpus/originals/<collection>/<file>
-  if (collectionFilter === '') {
-    for (const collection of names) {
-      const oldDir = path.join(root, '.corpus', 'originals', collection)
-      let files = []
-      try { files = fs.readdirSync(oldDir, { withFileTypes: true }).filter((item) => item.isFile() && !item.name.startsWith('.')) } catch { files = [] }
-      for (const file of files) {
-        const abs = path.join(oldDir, file.name)
-        let stat = null
-        try { stat = fs.statSync(abs) } catch { continue }
-        entries.push({
-          collection,
-          folder: null,
-          name: file.name,
-          original: path.posix.join('.corpus', 'originals', collection, file.name),
-          processed: null,
-          title: file.name,
-          format: path.extname(file.name).slice(1).toLowerCase(),
-          mediaType: mediaTypeOf(file.name),
-          image: isImageFile(file.name),
-          bytes: stat.size,
-          mtimeMs: stat.mtimeMs,
-          importedAt: new Date(stat.mtimeMs).toISOString(),
-          aiStructured: false,
-        })
-      }
-    }
-  }
-  entries.sort((left, right) => right.mtimeMs - left.mtimeMs)
-  return entries
-}
-
-const THUMBNAIL_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tif', '.tiff', '.pdf', '.docx', '.xlsx', '.pptx'])
-
 function stripFrontMatterText(text) {
   const value = String(text || '')
   const match = value.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/)
@@ -286,8 +148,7 @@ function readExcerpt(root, relPath, limit = 260) {
 }
 
 /**
- * 语料缩略图：以 processed 文档为主，关联它导入时的原件缩略图。
- * 没有原件的旧版文本语料用 excerpt 文本预览代表。
+ * 语料文件列表：只展示 processed 文档。
  */
 function listGallery(root, collectionFilter = '', limit = 60) {
   const names = collectionNames(root).filter((name) => collectionFilter === '' || name === collectionFilter)
@@ -306,42 +167,21 @@ function listGallery(root, collectionFilter = '', limit = 60) {
           const folderRel = parts.slice(0, processedIndex).join('/')
           meta = readJsonFile(path.join(root, ...folderRel.split('/'), '.meta.json'))
         }
-        const original = meta && typeof meta.original === 'string' ? meta.original : null
-        let originalExists = false
-        let originalBytes = 0
-        let originalMtime = 0
-        if (original) {
-          try {
-            const abs = path.resolve(root, ...original.split('/'))
-            const stat = fs.statSync(abs)
-            if (stat.isFile()) {
-              originalExists = true
-              originalBytes = stat.size
-              originalMtime = stat.mtimeMs
-            }
-          } catch { originalExists = false }
-        }
-        const originalExt = original ? path.extname(original).toLowerCase() : ''
-        const thumbnail = originalExists && THUMBNAIL_EXTS.has(originalExt)
-          ? `${PANEL_PREFIX}/thumbnail?path=${encodeURIComponent(original)}&size=320`
-          : null
         let processedMtime = 0
         try { processedMtime = fs.statSync(path.resolve(root, ...String(file.path).split('/'))).mtimeMs } catch { processedMtime = 0 }
         const importedAt = meta && typeof meta.importedAt === 'string' && meta.importedAt !== ''
           ? meta.importedAt
-          : new Date(originalMtime || processedMtime || Date.now()).toISOString()
+          : new Date(processedMtime || Date.now()).toISOString()
         items.push({
           collection,
           path: file.path,
           title: meta && typeof meta.title === 'string' && meta.title !== '' ? meta.title : file.title,
           excerpt: readExcerpt(root, file.path),
           format: meta && typeof meta.format === 'string' && meta.format !== '' ? meta.format : (path.extname(file.path).slice(1) || 'text'),
-          bytes: originalExists ? originalBytes : Number(file.bytes) || 0,
+          bytes: Number(file.bytes) || 0,
           chunks: Number(file.chunks) || 0,
           indexedAt,
           importedAt,
-          original: originalExists ? original : null,
-          thumbnail,
           aiStructured: Boolean(meta && meta.aiStructured),
           kind: meta && typeof meta.kind === 'string' ? meta.kind : 'text',
         })
@@ -510,116 +350,6 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
     }),
   })
 
-  // v1.3：导入原件列表（管理页缩略图）与原件字节读取。
-  routes.push({
-    kind: 'exact',
-    path: `${PANEL_PREFIX}/originals`,
-    handler: guarded(async (req, res) => {
-      if (req.method !== 'GET') { sendJson(res, 405, { ok: false, error: 'method not allowed' }); return }
-      const collection = queryOf(req).get('collection') || ''
-      const entries = listOriginals(root, collection)
-      sendJson(res, 200, {
-        ok: true,
-        total: entries.length,
-        collections: collectionChoices(root),
-        imports: entries,
-      })
-    }),
-  })
-
-  routes.push({
-    kind: 'exact',
-    path: `${PANEL_PREFIX}/original`,
-    handler: guarded(async (req, res) => {
-      if (req.method !== 'GET' && req.method !== 'HEAD') { sendJson(res, 405, { ok: false, error: 'method not allowed' }); return }
-      const rel = String(queryOf(req).get('path') || '').replace(/\\/g, '/')
-      const parts = rel.split('/')
-      if (rel === '' || parts.some((part) => part === '' || part === '..') || !parts.includes('originals')) {
-        sendJson(res, 400, { ok: false, error: 'path 必须是原件路径' })
-        return
-      }
-      const rootAbs = path.resolve(root)
-      const abs = path.resolve(rootAbs, rel)
-      if (!(abs === rootAbs || abs.startsWith(rootAbs + path.sep))) {
-        sendJson(res, 403, { ok: false, error: '路径越界' })
-        return
-      }
-      let stat
-      try { stat = fs.lstatSync(abs) } catch { sendJson(res, 404, { ok: false, error: '找不到原件' }); return }
-      if (!stat.isFile() || stat.isSymbolicLink()) { sendJson(res, 404, { ok: false, error: '不是可读取的原件' }); return }
-      let real
-      try { real = fs.realpathSync(abs) } catch { sendJson(res, 404, { ok: false, error: '找不到原件' }); return }
-      const relReal = path.relative(fs.realpathSync(rootAbs), real)
-      if (relReal.startsWith('..') || path.isAbsolute(relReal)) { sendJson(res, 403, { ok: false, error: '路径越界' }); return }
-      res.statusCode = 200
-      res.setHeader('content-type', mediaTypeOf(abs))
-      res.setHeader('content-length', String(stat.size))
-      res.setHeader('cache-control', 'private, max-age=3600')
-      if (req.method === 'HEAD') { res.end(); return }
-      fs.createReadStream(abs).pipe(res)
-    }),
-  })
-
-  // v1.3：Windows 缩略图（所有文件类型；逻辑由 Windows 提供，插件只调用）。
-  routes.push({
-    kind: 'exact',
-    path: `${PANEL_PREFIX}/thumbnail`,
-    handler: guarded(async (req, res) => {
-      if (req.method !== 'GET' && req.method !== 'HEAD') { sendJson(res, 405, { ok: false, error: 'method not allowed' }); return }
-      const query = queryOf(req)
-      const resolved = resolveOriginalPath(root, query.get('path') || '')
-      if (resolved === null) { sendJson(res, 400, { ok: false, error: 'path 必须是原件路径' }); return }
-      const size = Math.max(64, Math.min(512, Number(query.get('size')) || 256))
-      const thumbsDir = path.join(root, '.corpus', 'thumbs')
-      fs.mkdirSync(thumbsDir, { recursive: true })
-      const key = crypto.createHash('sha1')
-        .update(`${resolved.rel}|${size}|${resolved.stat.mtimeMs}`)
-        .digest('hex')
-      const cacheImage = path.join(thumbsDir, key + '.img')
-      const cacheMeta = path.join(thumbsDir, key + '.json')
-      const serveCached = () => {
-        const meta = readJsonFile(cacheMeta) || {}
-        const buffer = fs.readFileSync(cacheImage)
-        res.statusCode = 200
-        res.setHeader('content-type', meta.contentType || 'image/bmp')
-        res.setHeader('content-length', String(buffer.length))
-        res.setHeader('cache-control', 'private, max-age=86400')
-        if (req.method === 'HEAD') { res.end(); return }
-        res.end(buffer)
-      }
-      if (fs.existsSync(cacheImage) && fs.existsSync(cacheMeta)) {
-        try { serveCached(); return } catch { /* 缓存损坏则重生成 */ }
-      }
-      const temp = path.join(thumbsDir, key + '.tmp-' + process.pid + '-' + Date.now())
-      try {
-        const info = await runThumbnail(resolved.abs, size, temp)
-        if (!info || info.ok !== true || !fs.existsSync(temp)) throw new Error('Windows 没有返回缩略图')
-        const buffer = fs.readFileSync(temp)
-        const contentType = typeof info.contentType === 'string' && info.contentType !== '' ? info.contentType : 'image/bmp'
-        fs.writeFileSync(cacheImage, buffer)
-        fs.writeFileSync(cacheMeta, JSON.stringify({ contentType, width: info.width, height: info.height }, null, 2), 'utf8')
-        try { fs.rmSync(temp, { force: true }) } catch { /* 清理失败不影响结果 */ }
-        res.statusCode = 200
-        res.setHeader('content-type', contentType)
-        res.setHeader('content-length', String(buffer.length))
-        res.setHeader('cache-control', 'private, max-age=86400')
-        if (req.method === 'HEAD') { res.end(); return }
-        res.end(buffer)
-      } catch (error) {
-        try { fs.rmSync(temp, { force: true }) } catch { /* 清理失败不影响回退 */ }
-        // 图片可以退回原图；其他类型让前端显示类型图标。
-        if (isImageFile(resolved.abs)) {
-          try {
-            const buffer = fs.readFileSync(resolved.abs)
-            sendFileBuffer(res, mediaTypeOf(resolved.abs), buffer)
-            return
-          } catch { /* 继续 404 */ }
-        }
-        sendJson(res, 404, { ok: false, error: error instanceof Error ? error.message : String(error) })
-      }
-    }),
-  })
-
   // v1.3：导入 UI 的候选集合、格式与提取器状态。
   routes.push({
     kind: 'exact',
@@ -740,7 +470,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
     }),
   })
 
-  // v1.6：语料缩略图（processed 文档 + 原件缩略图/文本摘要）。
+  // v1.6：语料文件列表（processed 文档）。
   routes.push({
     kind: 'exact',
     path: `${PANEL_PREFIX}/gallery`,
@@ -830,7 +560,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
     }),
   })
 
-  // 用 Windows 默认关联程序打开 processed/原件。
+  // 用 Windows 默认关联程序打开 processed 文件。
   routes.push({
     kind: 'exact',
     path: `${PANEL_PREFIX}/open-external`,

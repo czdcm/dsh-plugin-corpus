@@ -226,8 +226,8 @@ try {
   assert(result.title === '阶段总结', '指定 title 应保留，实际 ' + result.title)
   const parts = String(result.target).split('/')
   assert(parts[0] === 'sessions' && parts[2] === 'processed' && parts[3] === '阶段总结.md', 'target 应是 sessions/<文件夹>/processed/阶段总结.md，实际 ' + result.target)
-  assert(String(result.original).endsWith('/originals/session-transcript.md'), '会话总结原件应是 originals/session-transcript.md，实际 ' + result.original)
-  assert(fs.readFileSync(absOf(root, result.original), 'utf8') === built.text, 'originals/session-transcript.md 应是传给小代理的 transcript 原文')
+  assert(result.original === undefined, '会话总结不再保存原件')
+  assert(!fs.existsSync(absOf(root, `sessions/${parts[1]}/originals`)), '会话总结不应创建 originals/')
   assert(fs.existsSync(absOf(root, result.target)), 'processed 会话总结应落盘')
 
   const doc = readFrontMatter(absOf(root, result.target))
@@ -235,16 +235,16 @@ try {
   assert(doc.front.sessionId === '"session-alpha"', 'front matter 应记录 sessionId，实际 ' + doc.front.sessionId)
   assert(doc.front.source === '"session:session-alpha"', 'front matter source 应为 session:<id>，实际 ' + doc.front.source)
   assert(doc.front.instructions === JSON.stringify(INSTRUCTIONS), 'front matter instructions')
-  assert(doc.front.original === JSON.stringify(result.original), 'front matter original 指向 transcript 快照')
+  assert(doc.front.original === undefined, 'front matter 不应再有 original')
   assert(!Object.prototype.hasOwnProperty.call(doc.front, 'gitRemote'), '会话总结不应有 gitRemote')
   assert(doc.body.includes('# 会话阶段总结') && doc.body.includes('fake 经验'), '正文应是小代理返回的 Markdown')
 
   const meta = JSON.parse(fs.readFileSync(absOf(root, `sessions/${parts[1]}/.meta.json`), 'utf8'))
   assert(meta.kind === 'session' && meta.sessionId === 'session-alpha', '.meta.json kind/sessionId')
-  assert(meta.processed === result.target && meta.original === result.original, '.meta.json processed/original')
+  assert(meta.processed === result.target && meta.original === undefined, '.meta.json processed 且无 original')
   assert(meta.title === '阶段总结' && meta.collection === 'sessions' && meta.aiStructured === true, '.meta.json title/collection/aiStructured')
   assert(meta.instructions === INSTRUCTIONS && meta.format === 'session', '.meta.json instructions/format')
-  ok('会话总结落盘：processed/<标题>.md + originals/session-transcript.md + .meta.json（kind=session、sessionId）')
+  ok('会话总结落盘：processed/<标题>.md + .meta.json（kind=session、sessionId），不保存原件')
 
   // -------------------------------------------------------------------------
   // 7) 会话专用 system prompt + instructions + reindex

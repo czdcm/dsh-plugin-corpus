@@ -86,7 +86,7 @@ function deterministicBody({ title, source, format, text, warnings, formulas }) 
   return lines.join('\n')
 }
 
-function composeMarkdown({ title, source, format, collection, importedAt, original, aiStructured, body, warnings }) {
+function composeMarkdown({ title, source, format, collection, importedAt, aiStructured, body, warnings }) {
   const front = [
     '---',
     `title: ${yamlString(title)}`,
@@ -96,7 +96,6 @@ function composeMarkdown({ title, source, format, collection, importedAt, origin
     `collection: ${yamlString(collection)}`,
     `aiStructured: ${aiStructured ? 'true' : 'false'}`,
   ]
-  if (original) front.push(`original: ${yamlString(original)}`)
   front.push('---', '')
   const note = warnings.length > 0 ? [`> 提取提示：${warnings.join('；')}`, ''] : []
   const cleanBody = stripFrontMatter(body)
@@ -260,7 +259,7 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
           ? extracted.meta.formulas.filter((formula) => typeof formula === 'string' && formula !== '')
           : extractFormulaLines(text)
 
-        // 每次导入一个独立文件夹：originals/ 原件 + processed/ 结构化数据。
+        // 每次导入一个独立文件夹：只写 processed/ 结构化数据；源文件由用户自行管理。
         const collectionDir = path.resolve(root, job.collection)
         const parentDir = job.prefix ? path.join(collectionDir, job.prefix) : collectionDir
         const folderBase = `${stamp()}-${slugOf(path.basename(file, path.extname(file)), 'import')}`
@@ -272,18 +271,8 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
         }
         const folderRel = path.posix.join(job.collection, job.prefix ? `${job.prefix}/${folderName}` : folderName)
         const folderAbs = path.join(root, ...folderRel.split('/'))
-        const originalsDir = path.join(folderAbs, 'originals')
         const processedDir = path.join(folderAbs, 'processed')
-        fs.mkdirSync(originalsDir, { recursive: true })
         fs.mkdirSync(processedDir, { recursive: true })
-        let originalRel = null
-        try {
-          const originalName = safeName(source)
-          fs.copyFileSync(file, path.join(originalsDir, originalName))
-          originalRel = path.posix.join(folderRel, 'originals', originalName)
-        } catch (error) {
-          warnings.push(`原文件入档失败：${error instanceof Error ? error.message : String(error)}`)
-        }
 
         let body = ''
         let aiStructured = false
@@ -360,7 +349,6 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
             format,
             collection: job.collection,
             importedAt,
-            original: originalRel,
             aiStructured,
             body,
             warnings,
@@ -373,7 +361,6 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
               folder: folderName,
               prefix: job.prefix || '',
               source,
-              original: originalRel,
               processed: relTarget,
               title,
               format,
@@ -392,7 +379,6 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
             source: display,
             ok: true,
             target: relTarget,
-            original: originalRel,
             folder: folderName,
             format,
             chars: extracted.kind === 'image' ? body.length : text.length,

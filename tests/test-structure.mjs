@@ -176,36 +176,20 @@ try {
   assert(processed.front.gitBranch === '"main"' && processed.front.gitCommit === JSON.stringify(GIT_COMMIT), 'front matter gitBranch/gitCommit')
   assert(processed.front.instructions === JSON.stringify(INSTRUCTIONS), 'front matter instructions 应记录额外要求')
   assert(!Object.prototype.hasOwnProperty.call(processed.front, 'sessionId'), '仓库导入的 front matter 不应有 sessionId')
-  assert(processed.front.original === JSON.stringify(result.original), 'front matter original 应指向原件快照')
+  assert(processed.front.original === undefined, 'front matter 不应有 original')
   assert(processed.body.includes('# Demo Repo 深度解析') && processed.body.includes('## 目录与架构'), '正文应是小代理返回的 Markdown')
 
   const meta = JSON.parse(fs.readFileSync(absOf(ROOT, `${folderRel}/.meta.json`), 'utf8'))
-  for (const key of ['version', 'kind', 'collection', 'folder', 'prefix', 'source', 'original', 'processed', 'title', 'format', 'importedAt', 'aiStructured', 'instructions', 'stats', 'git', 'sessionId', 'warnings']) {
+  for (const key of ['version', 'kind', 'collection', 'folder', 'prefix', 'source', 'processed', 'title', 'format', 'importedAt', 'aiStructured', 'instructions', 'stats', 'git', 'sessionId', 'warnings']) {
     assert(Object.prototype.hasOwnProperty.call(meta, key), '.meta.json 缺字段 ' + key)
   }
   assert(meta.version === 1 && meta.kind === 'repo' && meta.format === 'repository', '.meta.json version/kind/format')
-  assert(meta.folder === parts[1] && meta.processed === result.target && meta.original === result.original, '.meta.json folder/processed/original')
+  assert(meta.folder === parts[1] && meta.processed === result.target && meta.original === undefined, '.meta.json folder/processed 且无 original')
   assert(meta.source === repo && meta.title === 'Demo Repo 深度解析' && meta.aiStructured === true, '.meta.json source/title/aiStructured')
   assert(meta.git.remote === GIT_REMOTE && meta.git.branch === 'main' && meta.sessionId === '', '.meta.json git/sessionId')
   assert(!Number.isNaN(Date.parse(meta.importedAt)) && Array.isArray(meta.warnings), '.meta.json importedAt 是 ISO 时间、warnings 是数组')
-  ok('仓库产物：processed/<标题>.md + .meta.json（front matter kind/format/git*/instructions，无 sessionId）')
-
-  assert(result.original === `${folderRel}/originals/repo.json`, '仓库导入的 original 应是 originals/repo.json，实际 ' + result.original)
-  const manifest = JSON.parse(fs.readFileSync(absOf(ROOT, result.original), 'utf8'))
-  assert(manifest.kind === 'repository' && manifest.sourcePath === repo, 'repo.json kind/sourcePath')
-  assert(manifest.git.remote === GIT_REMOTE && manifest.git.branch === 'main' && manifest.git.commit === GIT_COMMIT, 'repo.json git 元数据')
-  assert(manifest.totalFiles === result.stats.files && manifest.stats.included === result.stats.included, 'repo.json totalFiles/stats')
-  assert(!Number.isNaN(Date.parse(manifest.scannedAt)), 'repo.json scannedAt 是 ISO 时间')
-  const manifestPaths = manifest.files.map((file) => file.path)
-  for (const expected of ['README.md', 'package.json', 'src/index.js', 'src/core.js', 'docs/guide.md']) {
-    assert(manifestPaths.includes(expected), 'repo.json 清单应含 ' + expected + '，实际 ' + JSON.stringify(manifestPaths))
-  }
-  for (const hidden of ['node_modules/pkg/index.js', 'dist/bundle.js', 'logo.png', '.hidden/secret.js', 'linked-readme.md']) {
-    assert(!manifestPaths.includes(hidden), 'repo.json 清单不应含 ' + hidden)
-  }
-  assert(!manifestPaths.some((item) => item.startsWith('.git/')), 'repo.json 清单不应含 .git/')
-  assert(fs.readFileSync(absOf(ROOT, `${folderRel}/originals/README.md`), 'utf8') === readmeText, 'originals/ 应保留 README 快照')
-  ok('仓库原件快照：originals/repo.json 清单（Git + 文件表，不含 .git/node_modules/dist/隐藏/二进制）' + (symlinkCreated ? ' + 跳过符号链接' : '') + ' + README.md')
+  assert(!fs.existsSync(absOf(ROOT, `${folderRel}/originals`)), '不应再创建 originals/')
+  ok('仓库产物：processed/<标题>.md + .meta.json（不保存原件快照）')
 
   assert(repoAgent.calls.length === 1, 'agent.structure 应被调用 1 次，实际 ' + repoAgent.calls.length)
   const repoCall = repoAgent.calls[0]
@@ -253,11 +237,11 @@ try {
   assert(single.ok === true && single.imported === true && single.kind === 'file', '单文件 kind 应为 file，实际 ' + single.kind)
   assert(single.title === 'Guide', '单文件标题应取提取结果 H1，实际 ' + single.title)
   assert(String(single.target).includes('/processed/Guide.md'), '单文件 target 应为 processed/Guide.md，实际 ' + single.target)
-  assert(String(single.original).endsWith('/originals/guide.md'), '单文件原件应是 originals/guide.md，实际 ' + single.original)
-  assert(fs.readFileSync(absOf(rootFile, single.original), 'utf8') === fs.readFileSync(singlePath, 'utf8'), '原件内容应与源文件一致')
+  assert(single.original === undefined, '单文件不再返回 original')
+  assert(!fs.existsSync(absOf(rootFile, `${path.dirname(single.target)}/../originals`)), '单文件不应创建 originals/')
   const fileDoc = readFrontMatter(absOf(rootFile, single.target))
   assert(fileDoc.front.kind === '"file"' && fileDoc.front.format === '"file"', '单文件 front matter kind/format=file')
-  assert(fileDoc.front.original === JSON.stringify(single.original), '单文件 front matter original')
+  assert(fileDoc.front.original === undefined, '单文件 front matter 不应有 original')
   const fileCall = fileAgent.calls[0]
   assert(fileCall.system === undefined && fileCall.meta.format === 'file', '单文件不计仓库/会话，system 默认、meta.format=file')
   assert(fileCall.text.includes('格式：md') && fileCall.text.includes('guide body unique token'), '单文件材料应含格式与正文')
@@ -267,10 +251,10 @@ try {
   assert(raw.kind === 'file' && raw.title === 'raw', '非提取格式（.js）也应按文本兜底，实际 kind=' + raw.kind + ' title=' + raw.title)
   const rawDoc = readFrontMatter(absOf(rootFile, raw.target))
   assert(rawDoc.front.kind === '"file"' && rawDoc.front.format === '"file"', '.js 单文件 front matter kind/format')
-  assert(String(raw.original).endsWith('/originals/raw.js'), '.js 原件应入档到 originals/raw.js')
+  assert(raw.original === undefined, '.js 单文件不再返回 original')
   assert(fileAgent.calls[1].text.includes('格式：js') && fileAgent.calls[1].text.includes('const answer = 42'), '.js 材料应含「格式：js」与正文')
   assert(fileReindex.calls.length === 2 && fileReindex.calls.every((call) => call.names.join(',') === 'struct-file'), '每次单文件导入都应触发重建')
-  ok('单文件：原件复制到 originals/ + processed/<标题>.md（.md 提取 / .js 文本兜底）+ 重建')
+  ok('单文件：只写 processed/<标题>.md（.md 提取 / .js 文本兜底），不保存原件 + 重建')
 
   // -------------------------------------------------------------------------
   // 4) text 导入：originals/input.md 原文快照 + front matter + 重建
@@ -283,8 +267,7 @@ try {
   const textImport = await textService.run({ text: sourceText, collection: 'struct-text', instructions: '保留接口名' })
   assert(textImport.ok === true && textImport.imported === true && textImport.kind === 'text', 'text 导入 kind=text')
   assert(textImport.title === 'API 说明', 'text 导入标题应取 H1，实际 ' + textImport.title)
-  assert(String(textImport.original).endsWith('/originals/input.md'), 'text 导入原件应是 originals/input.md，实际 ' + textImport.original)
-  assert(fs.readFileSync(absOf(rootText, textImport.original), 'utf8') === sourceText, 'originals/input.md 应是原文快照')
+  assert(textImport.original === undefined, 'text 导入不再保存原件')
   const textDoc = readFrontMatter(absOf(rootText, textImport.target))
   assert(textDoc.front.kind === '"text"' && textDoc.front.format === '"text"', 'text 导入 front matter kind/format=text')
   assert(textDoc.front.instructions === JSON.stringify('保留接口名'), 'text 导入 front matter instructions')
@@ -292,9 +275,9 @@ try {
   assert(textReindex.calls.length === 1 && textImport.reindexJobId === 'job-fake-1', 'text 导入后触发重建并返回 reindexJobId')
   const prefixed = await textService.run({ text: '# 带 prefix\n\nprefix body\n', collection: 'struct-text', prefix: 'notes/2026' })
   assert(String(prefixed.target).startsWith('struct-text/notes/2026/'), 'prefix 应写入 <collection>/<prefix>/ 下，实际 ' + prefixed.target)
-  assert(fs.existsSync(absOf(rootText, prefixed.target)) && String(prefixed.original).startsWith('struct-text/notes/2026/'), 'prefix 的 processed/original 路径')
+  assert(fs.existsSync(absOf(rootText, prefixed.target)) && String(prefixed.target).startsWith('struct-text/notes/2026/'), 'prefix 的 processed 路径')
   assert(textReindex.calls.length === 2, '每次导入都应触发一次重建，实际 ' + textReindex.calls.length)
-  ok('text 导入：originals/input.md 原文快照 + processed + front matter + prefix + 重建')
+  ok('text 导入：processed + front matter + prefix + 重建，不保存原件')
 
   // -------------------------------------------------------------------------
   // 5) 参数与边界错误

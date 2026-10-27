@@ -6,7 +6,7 @@ dsh-plugin-corpus 是 **DeepSeek Harness (DSH)** 的文件语料库插件。
 
 - **内容是普通文件**：语料根目录可以整体搬走、备份；
 - **索引只是缓存**：每个集合一份 SQLite，可以随时重建；
-- **模型只读 `processed/`**：原件留给人工查看；
+- **模型只读 `processed/`**：插件不再保存源文件；
 - **一切访问先过 ACL**：按工作区/会话/路径授权，默认拒绝。
 
 当前版本：**1.0.0**。
@@ -55,7 +55,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 - **导入语料**：浏览器文件可多选；本机路径可多行输入（每行一个文件/目录），同一批全部导入同一个集合；集合留空会自动创建 `import-日期-时间`；
 - **公式**：HTML MathML、Word/PowerPoint OMML、Unicode 数学符号和已有 LaTeX 会统一整理为 `$...$` / `$$...$$`；PDF 公式行也会保留为 LaTeX 公式块（插图不要求识别）；
 - **检索**：按关键词搜索已索引的 `processed/` 内容；结果只用于定位，不直接打开预览；
-- **查看**：文件列表每行的「用外部软件打开」唤出 Windows「打开方式」，默认目标是**处理后语料**；`▾` 菜单可切换「处理后语料（默认）」/「原文件」，或「用默认程序直接打开」；不再内置右侧栏预览；
+- **查看**：文件列表每行的「用外部软件打开」用 Windows 默认关联程序打开**处理后语料**；`▾` 菜单只保留「选择软件打开」用于临时选择其他程序；不再内置右侧栏预览；
 - **语料文件**：按集合分组的资源管理器式列表；
   - 集合组默认折叠，点集合标题 `▸`/`▾` 展开或折叠；
   - 顶部有「全部展开 / 全部折叠」；
@@ -96,7 +96,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 <CORPUS_ROOT>/
 ├─ <collection>/
 │  └─ <import-folder>/
-│     ├─ originals/     原文件（人看；不索引、不可被 corpus_read 读取）
 │     ├─ processed/     模型使用的 Markdown
 │     └─ .meta.json
 └─ .corpus/
@@ -128,7 +127,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 | `.csv` | 文本化表格 |
 | `.pdf` | 优先随包 `pdftotext`；无文字层时用纯 JS 解析；扫描版走 Windows OCR |
 | `.docx` `.xlsx` `.pptx` | 优先 OfficeCLI；失败/缺失时回退纯 JS ZIP+XML 解析 |
-| 图片（PNG/JPEG/WebP/GIF/BMP/TIFF） | 有可用视觉模型时结构化；否则保存原件与占位 Markdown |
+| 图片（PNG/JPEG/WebP/GIF/BMP/TIFF） | 有可用视觉模型时结构化；否则保存占位 Markdown |
 
 面板里的 **Vision** 不可用时会显示具体原因，通常是当前默认模型不支持图片输入。可以在 DSH profile 的插件配置中设置 `ingestVisionProvider` / `ingestVisionModel` 指向可接收图片的模型；未配置视觉模型时图片退回内置 Windows OCR。
 
@@ -209,8 +208,7 @@ OfficeCLI 是 Apache-2.0；Poppler `pdftotext` 是 GPL-2.0-or-later，详见仓�
 ```text
 GET  /overview          GET  /files             POST /search
 POST /read              POST /reindex           GET  /status
-GET  /access            GET  /originals         GET  /original
-GET  /thumbnail         GET  /import/targets    POST /import
+GET  /access            GET  /import/targets    POST /import
 GET  /import/status     POST /delete            GET  /gallery
 GET  /settings          POST /settings/root     POST /settings/open
 GET  /settings          POST /settings/root     POST /settings/open
@@ -243,7 +241,7 @@ Invoke-RestMethod 'http://127.0.0.1:<port>/api/dsh-plugin-corpus/gallery?limit=1
 ## 8. 限制与安全
 
 - 面板是本地管理界面，没有面向公网的认证；不要反向代理到公网；
-- `corpus_read` 拒绝 `originals/` 路径，只读 `processed/`；
+- `corpus_read` 只读 `processed/`；
 - 删除是软删除，内容移到 `.corpus/trash/`；
 - 文档导入有单文件大小限制（默认 25 MiB）和格式白名单；
 - 扫描版 PDF 的 OCR 依赖 Windows OCR，速度比文字层提取慢；
@@ -290,6 +288,6 @@ $env:CORPUS_TEST_DSH = '...'
 
 - OfficeCLI：Apache-2.0；
 - Poppler `pdftotext`：GPL-2.0-or-later；
-- Windows OCR/缩略图：调用系统 API，不再分发微软二进制。
+- Windows OCR：调用系统 API，不再分发微软二进制。
 
 完整说明见仓库根目录的 `THIRD_PARTY_NOTICES.md` 与 `LICENSE`。

@@ -74,9 +74,6 @@
         importTargets: '/api/dsh-plugin-corpus/import/targets',
         importStart: '/api/dsh-plugin-corpus/import',
         importStatus: '/api/dsh-plugin-corpus/import/status',
-        originals: '/api/dsh-plugin-corpus/originals',
-        original: '/api/dsh-plugin-corpus/original',
-        thumbnail: '/api/dsh-plugin-corpus/thumbnail',
         gallery: '/api/dsh-plugin-corpus/gallery',
         delete: '/api/dsh-plugin-corpus/delete',
         settings: '/api/dsh-plugin-corpus/settings',
@@ -257,7 +254,7 @@
           importAutoCollectionHint: '留空会自动创建 import-日期-时间 集合，批量文件全部进入该集合。',
           importNeedCollection: '请选择或输入目标集合。',
           settingsTitle: '语料库根目录',
-          settingsDesc: '集合、索引、原件和缩略图都在这个目录里；可把整个语料库搬到新位置。',
+          settingsDesc: '集合和索引都在这个目录里；可把整个语料库搬到新位置。',
           settingsCurrent: '当前根目录',
           settingsCopy: '复制路径',
           settingsCopied: '路径已复制。',
@@ -267,7 +264,7 @@
           settingsNewPath: '新根目录（绝对路径）',
           settingsNewPlaceholder: '例如 D:\\MyCorpus 或 C:\\Users\\你\\Documents\\corpus',
           settingsMigrate: '迁移语料库',
-          settingsConfirm: '再点一次确认迁移：会移动所有集合、索引和原件。',
+          settingsConfirm: '再点一次确认迁移：会移动所有集合和索引。',
           settingsMigrating: '正在迁移…',
           settingsDone: '迁移完成。',
           settingsRestart: '数据已复制到新位置；重启 DSH 后会使用新根目录（旧目录保留，可重启后手动清理）。',
@@ -320,7 +317,7 @@
           importOpen: '导入语料',
           importClose: '收起导入',
           galleryTitle: '语料文件',
-          galleryDesc: '按集合分组的文件列表；图标优先用 Windows 缩略图，纯文本按已知扩展名显示 TXT/MD/PDF 等对应文件图标。点击一行打开提取结果。',
+          galleryDesc: '按集合分组的文件列表；按已知扩展名显示 TXT/MD/PDF 等对应文件图标。点击一行用外部软件打开处理后语料。',
           galleryFilter: '集合范围',
           galleryAll: '全部集合',
           galleryCount: (total, shown) => `共 ${total} 篇，显示 ${shown} 篇`,
@@ -357,7 +354,7 @@
           galleryRefresh: '刷新语料',
           galleryLoading: '正在加载语料…',
           galleryError: '加载语料失败：',
-          galleryEmpty: '还没有导入原件。用上方「导入语料」导入图片或文档。',
+          galleryEmpty: '还没有导入语料。用上方「导入语料」导入图片或文档。',
           galleryViewProcessed: '查看提取结果',
           galleryClose: '关闭',
           galleryAi: 'AI 结构化',
@@ -538,7 +535,7 @@
           importAutoCollectionHint: 'Leave empty to auto-create an import-<date>-<time> collection; all batch files go into it.',
           importNeedCollection: 'Choose or type a target collection.',
           settingsTitle: 'Corpus root',
-          settingsDesc: 'Collections, indexes, originals and thumbnails all live here; you can move the whole corpus to a new location.',
+          settingsDesc: 'Collections and indexes live here; you can move the whole corpus to a new location.',
           settingsCurrent: 'Current root',
           settingsCopy: 'Copy path',
           settingsCopied: 'Path copied.',
@@ -548,7 +545,7 @@
           settingsNewPath: 'New root (absolute path)',
           settingsNewPlaceholder: 'e.g. D:\\MyCorpus or C:\\Users\\you\\Documents\\corpus',
           settingsMigrate: 'Migrate corpus',
-          settingsConfirm: 'Click again to confirm: all collections, indexes and originals will be moved.',
+          settingsConfirm: 'Click again to confirm: all collections and indexes will be moved.',
           settingsMigrating: 'Migrating…',
           settingsDone: 'Migration complete.',
           settingsRestart: 'Data was copied to the new location; restart DSH to use it (the old directory is kept for now).',
@@ -601,7 +598,7 @@
           importOpen: 'Import corpus',
           importClose: 'Collapse import',
           galleryTitle: 'Corpus files',
-          galleryDesc: 'Files grouped by collection; icons use Windows thumbnails when available, and known extensions map to their TXT/MD/PDF file-type icons. Click a row to open the extracted text.',
+          galleryDesc: 'Files grouped by collection; known extensions map to their TXT/MD/PDF file-type icons. Click a row to open processed content in an external app.',
           galleryFilter: 'Collection',
           galleryAll: 'All collections',
           galleryCount: (total, shown) => `${total} documents, showing ${shown}`,
@@ -638,7 +635,7 @@
           galleryRefresh: 'Refresh corpus',
           galleryLoading: 'Loading corpus…',
           galleryError: 'Could not load corpus: ',
-          galleryEmpty: 'No originals yet. Use Import corpus above to add images or documents.',
+          galleryEmpty: 'No corpus yet. Use Import corpus above to add images or documents.',
           galleryViewProcessed: 'View extracted text',
           galleryClose: 'Close',
           galleryAi: 'AI structured',
@@ -1167,190 +1164,37 @@
         }))
       }
 
-      /** 原件缩略图卡片：仿资源管理器缩略图（延迟加载、等比裁切、失败回退）。 */
-      function OriginalThumb(props) {
-        const item = props.item
-        const t = copy()
-        const [broken, setBroken] = React.useState(false)
-        const [mode, setMode] = React.useState('thumb')
-        const src = mode === 'thumb'
-          ? API.thumbnail + '?path=' + encodeURIComponent(item.original) + '&size=256&t=' + String(item.mtimeMs || 0)
-          : API.original + '?path=' + encodeURIComponent(item.original) + '&t=' + String(item.mtimeMs || 0)
-        const onError = () => {
-          if (mode === 'thumb' && item.image) { setMode('original'); return }
-          setBroken(true)
-        }
-        const thumb = !broken
-          ? h('img', {
-            src,
-            alt: item.name,
-            loading: 'lazy',
-            decoding: 'async',
-            style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
-            onError,
-          })
-          : h('div', {
-            style: {
-              width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--dsw-alias-label-secondary)', fontSize: '12px', fontWeight: 600,
-              background: 'var(--dsw-alias-bg-layer-2)',
-            },
-          }, String(item.format || '?').toUpperCase())
-        return h('button', {
-          type: 'button',
-          title: item.name,
-          onClick: () => props.onOpen(item),
-          style: {
-            padding: 0, border: '1px solid var(--dsw-alias-border-l2)', borderRadius: '10px', overflow: 'hidden',
-            background: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)',
-            cursor: 'pointer', textAlign: 'left', font: 'inherit',
-          },
-        },
-          h('div', {
-            style: { aspectRatio: '1', background: 'var(--dsw-alias-bg-layer-2)', overflow: 'hidden' },
-          }, thumb),
-          h('div', { style: { padding: '6px 8px' } },
-            h('div', { style: { fontSize: '12px', lineHeight: '17px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, item.name),
-            h('div', { style: { ...SMALL, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
-              item.collection + ' · ' + formatSize(item.bytes)),
-            item.aiStructured ? h('span', { style: { ...CHIP, marginTop: '4px', display: 'inline-block' } }, t.galleryAi) : null,
-          ),
-        )
-      }
-
-      /** 主页面「原件库」：缩略图网格 + 大图/提取结果查看。 */
-      function OriginalGallery() {
-        const t = copy()
-        const [data, setData] = React.useState({ loading: true, error: null, items: [], total: 0 })
-        const [active, setActive] = React.useState(null)
-        const [processed, setProcessed] = React.useState({ loading: false, error: null, data: null })
-
-        const load = React.useCallback(() => {
-          setData((prev) => ({ ...prev, loading: true, error: null }))
-          getJson(API.originals).then((body) => {
-            setData({
-              loading: false,
-              error: null,
-              items: body && Array.isArray(body.imports) ? body.imports : [],
-              total: body && typeof body.total === 'number' ? body.total : 0,
-            })
-          }).catch((error) => {
-            setData({ loading: false, error: errorText(error), items: [], total: 0 })
-          })
-        }, [])
-
-        React.useEffect(() => {
-          load()
-          const onChange = () => load()
-          let target = null
-          try { target = window } catch { target = null }
-          if (target && typeof target.addEventListener === 'function') {
-            target.addEventListener('dsh-corpus-originals-changed', onChange)
-            return () => target.removeEventListener('dsh-corpus-originals-changed', onChange)
-          }
-          return undefined
-        }, [load])
-
-        const openItem = (item) => {
-          setActive(item)
-          setProcessed({ loading: false, error: null, data: null })
-          if (item.processed) {
-            setProcessed({ loading: true, error: null, data: null })
-            postJson(API.read, { path: item.processed, from: 1, lines: 300 }).then((body) => {
-              setProcessed({ loading: false, error: null, data: body })
-            }).catch((error) => {
-              setProcessed({ loading: false, error: errorText(error), data: null })
-            })
-          }
-        }
-
-        const originalUrl = (item) => API.original + '?path=' + encodeURIComponent(item.original) + '&t=' + String(item.mtimeMs || 0)
-
-        let body
-        if (data.loading) body = h('p', { style: SMALL }, t.galleryLoading)
-        else if (data.error !== null) body = h('p', { role: 'status', style: STATUS(false) }, t.galleryError + data.error)
-        else if (data.items.length === 0) body = h('p', { style: SMALL }, t.galleryEmpty)
-        else {
-          body = h('div', {
-            style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px' },
-          }, data.items.map((item) => h(OriginalThumb, {
-            key: item.collection + '/' + (item.folder || '') + '/' + item.name,
-            item,
-            onOpen: openItem,
-          })))
-        }
-
-        const overlay = active === null ? null : h('div', {
-          style: {
-            position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0, 0, 0, 0.62)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
-          },
-          onClick: () => setActive(null),
-        },
-          h('div', {
-            style: {
-              background: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)',
-              border: '1px solid var(--dsw-alias-border-l2)', borderRadius: '12px',
-              width: 'min(980px, 92vw)', maxHeight: '90vh', overflow: 'auto', padding: '16px', boxSizing: 'border-box',
-            },
-            onClick: (event) => { if (event && typeof event.stopPropagation === 'function') event.stopPropagation() },
-          },
-            h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' } },
-              h('strong', { style: { wordBreak: 'break-all' } }, active.name),
-              h('button', { type: 'button', style: BTN, onClick: () => setActive(null) }, t.galleryClose),
-            ),
-            active.image
-              ? h('img', {
-                src: originalUrl(active),
-                alt: active.name,
-                style: { maxWidth: '100%', maxHeight: '68vh', display: 'block', margin: '12px auto', objectFit: 'contain' },
-              })
-              : null,
-            h('div', { style: { ...SMALL, marginTop: '8px' } },
-              t.galleryCollection + ': ' + active.collection
-              + ' · ' + t.gallerySize + ': ' + formatSize(active.bytes)
-              + ' · ' + t.galleryImported + ': ' + formatTime(active.importedAt)),
-            h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' } },
-              h('a', {
-                href: originalUrl(active),
-                target: '_blank',
-                rel: 'noreferrer noopener',
-                style: { ...BTN, textDecoration: 'none', display: 'inline-block' },
-              }, t.galleryOpen),
-              active.processed ? h('button', {
-                type: 'button', style: BTN,
-                onClick: () => {
-                  if (processed.data !== null) { setProcessed({ loading: false, error: null, data: null }); return }
-                  setProcessed({ loading: true, error: null, data: null })
-                  postJson(API.read, { path: active.processed, from: 1, lines: 300 }).then((value) => {
-                    setProcessed({ loading: false, error: null, data: value })
-                  }).catch((error) => {
-                    setProcessed({ loading: false, error: errorText(error), data: null })
-                  })
-                },
-              }, t.galleryViewProcessed) : null,
-            ),
-            processed.loading ? h('p', { style: SMALL }, t.loading)
-              : processed.error !== null ? h('p', { role: 'status', style: STATUS(false) }, t.failed + processed.error)
-                : processed.data !== null ? h('pre', {
-                  style: {
-                    marginTop: '10px', padding: '10px', maxHeight: '30vh', overflow: 'auto',
-                    background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '8px',
-                    fontSize: '12px', lineHeight: '18px', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                  },
-                }, processed.data.text) : null,
-          ),
-        )
-
-        return h('section', { style: SECTION },
-          h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' } },
-            h('h2', { style: H2 }, t.galleryTitle),
-            h('button', { type: 'button', style: BTN, onClick: load }, t.galleryRefresh),
-          ),
-          h('p', { style: SMALL }, t.galleryDesc),
-          body,
-          overlay,
-        )
+      const FILE_TYPE_ICONS = {
+        pdf: { label: 'PDF', color: '#c62828' },
+        doc: { label: 'DOC', color: '#1565c0' }, docx: { label: 'DOC', color: '#1565c0' }, odt: { label: 'DOC', color: '#1565c0' },
+        xls: { label: 'XLS', color: '#2e7d32' }, xlsx: { label: 'XLS', color: '#2e7d32' }, ods: { label: 'XLS', color: '#2e7d32' },
+        ppt: { label: 'PPT', color: '#c05600' }, pptx: { label: 'PPT', color: '#c05600' }, odp: { label: 'PPT', color: '#c05600' },
+        txt: { label: 'TXT', color: '#546e7a' }, text: { label: 'TXT', color: '#546e7a' }, log: { label: 'LOG', color: '#546e7a' },
+        md: { label: 'MD', color: '#37474f' }, markdown: { label: 'MD', color: '#37474f' }, mdx: { label: 'MD', color: '#37474f' },
+        rst: { label: 'RST', color: '#455a64' }, adoc: { label: 'ADOC', color: '#455a64' }, tex: { label: 'TEX', color: '#455a64' },
+        csv: { label: 'CSV', color: '#00695c' }, tsv: { label: 'CSV', color: '#00695c' },
+        json: { label: 'JSON', color: '#5d4037' }, jsonc: { label: 'JSON', color: '#5d4037' }, json5: { label: 'JSON', color: '#5d4037' },
+        yaml: { label: 'YML', color: '#6a1b9a' }, yml: { label: 'YML', color: '#6a1b9a' }, toml: { label: 'TOML', color: '#6a1b9a' },
+        xml: { label: 'XML', color: '#455a64' }, html: { label: 'HTML', color: '#d84315' }, htm: { label: 'HTML', color: '#d84315' },
+        css: { label: 'CSS', color: '#1565c0' }, scss: { label: 'CSS', color: '#1565c0' }, sass: { label: 'CSS', color: '#1565c0' }, less: { label: 'CSS', color: '#1565c0' },
+        js: { label: 'JS', color: '#f9a825' }, mjs: { label: 'JS', color: '#f9a825' }, cjs: { label: 'JS', color: '#f9a825' }, jsx: { label: 'JSX', color: '#f9a825' },
+        ts: { label: 'TS', color: '#1976d2' }, mts: { label: 'TS', color: '#1976d2' }, cts: { label: 'TS', color: '#1976d2' }, tsx: { label: 'TSX', color: '#1976d2' },
+        py: { label: 'PY', color: '#1976d2' }, pyi: { label: 'PY', color: '#1976d2' },
+        go: { label: 'GO', color: '#00acc1' }, rs: { label: 'RS', color: '#d35400' },
+        java: { label: 'JAVA', color: '#c62828' }, kt: { label: 'KT', color: '#7b1fa2' }, kts: { label: 'KT', color: '#7b1fa2' }, scala: { label: 'SCALA', color: '#c62828' },
+        c: { label: 'C', color: '#1565c0' }, h: { label: 'H', color: '#1565c0' }, cpp: { label: 'CPP', color: '#1565c0' }, cc: { label: 'CPP', color: '#1565c0' }, cxx: { label: 'CPP', color: '#1565c0' }, hpp: { label: 'CPP', color: '#1565c0' }, hh: { label: 'CPP', color: '#1565c0' },
+        cs: { label: 'C#', color: '#512da8' }, rb: { label: 'RB', color: '#c62828' }, php: { label: 'PHP', color: '#6a1b9a' }, swift: { label: 'SWIFT', color: '#e65100' },
+        sh: { label: 'SH', color: '#2e7d32' }, bash: { label: 'SH', color: '#2e7d32' }, zsh: { label: 'SH', color: '#2e7d32' }, fish: { label: 'SH', color: '#2e7d32' },
+        ps1: { label: 'PS1', color: '#1976d2' }, bat: { label: 'BAT', color: '#546e7a' }, cmd: { label: 'BAT', color: '#546e7a' },
+        lua: { label: 'LUA', color: '#1565c0' }, sql: { label: 'SQL', color: '#1565c0' }, vue: { label: 'VUE', color: '#2e7d32' },
+        svelte: { label: 'SVELTE', color: '#e65100' }, astro: { label: 'ASTRO', color: '#e65100' },
+        png: { label: 'IMG', color: '#ad1457' }, jpg: { label: 'IMG', color: '#ad1457' }, jpeg: { label: 'IMG', color: '#ad1457' }, webp: { label: 'IMG', color: '#ad1457' },
+        gif: { label: 'IMG', color: '#ad1457' }, bmp: { label: 'IMG', color: '#ad1457' }, tif: { label: 'IMG', color: '#ad1457' }, tiff: { label: 'IMG', color: '#ad1457' },
+        ico: { label: 'ICO', color: '#ad1457' }, svg: { label: 'SVG', color: '#ad1457' },
+        zip: { label: 'ZIP', color: '#6d4c41' }, '7z': { label: '7Z', color: '#6d4c41' }, rar: { label: 'RAR', color: '#6d4c41' }, gz: { label: 'GZ', color: '#6d4c41' }, tar: { label: 'TAR', color: '#6d4c41' },
+        mp3: { label: 'AUDIO', color: '#8e24aa' }, wav: { label: 'AUDIO', color: '#8e24aa' }, flac: { label: 'AUDIO', color: '#8e24aa' },
+        mp4: { label: 'VIDEO', color: '#8e24aa' }, mkv: { label: 'VIDEO', color: '#8e24aa' }, mov: { label: 'VIDEO', color: '#8e24aa' },
+        repository: { label: 'REPO', color: '#5e35b1' }, session: { label: 'CHAT', color: '#5e35b1' },
       }
 
       /** 主页面语料库根目录设置：查看/复制/打开/迁移。 */
@@ -1520,53 +1364,8 @@
         )
       }
 
-      const FILE_TYPE_ICONS = {
-        pdf: { label: 'PDF', color: '#c62828' },
-        doc: { label: 'DOC', color: '#1565c0' }, docx: { label: 'DOC', color: '#1565c0' }, odt: { label: 'DOC', color: '#1565c0' },
-        xls: { label: 'XLS', color: '#2e7d32' }, xlsx: { label: 'XLS', color: '#2e7d32' }, ods: { label: 'XLS', color: '#2e7d32' },
-        ppt: { label: 'PPT', color: '#c05600' }, pptx: { label: 'PPT', color: '#c05600' }, odp: { label: 'PPT', color: '#c05600' },
-        txt: { label: 'TXT', color: '#546e7a' }, text: { label: 'TXT', color: '#546e7a' }, log: { label: 'LOG', color: '#546e7a' },
-        md: { label: 'MD', color: '#37474f' }, markdown: { label: 'MD', color: '#37474f' }, mdx: { label: 'MD', color: '#37474f' },
-        rst: { label: 'RST', color: '#455a64' }, adoc: { label: 'ADOC', color: '#455a64' }, tex: { label: 'TEX', color: '#455a64' },
-        csv: { label: 'CSV', color: '#00695c' }, tsv: { label: 'CSV', color: '#00695c' },
-        json: { label: 'JSON', color: '#5d4037' }, jsonc: { label: 'JSON', color: '#5d4037' }, json5: { label: 'JSON', color: '#5d4037' },
-        yaml: { label: 'YML', color: '#6a1b9a' }, yml: { label: 'YML', color: '#6a1b9a' }, toml: { label: 'TOML', color: '#6a1b9a' },
-        xml: { label: 'XML', color: '#455a64' }, html: { label: 'HTML', color: '#d84315' }, htm: { label: 'HTML', color: '#d84315' },
-        css: { label: 'CSS', color: '#1565c0' }, scss: { label: 'CSS', color: '#1565c0' }, sass: { label: 'CSS', color: '#1565c0' }, less: { label: 'CSS', color: '#1565c0' },
-        js: { label: 'JS', color: '#f9a825' }, mjs: { label: 'JS', color: '#f9a825' }, cjs: { label: 'JS', color: '#f9a825' }, jsx: { label: 'JSX', color: '#f9a825' },
-        ts: { label: 'TS', color: '#1976d2' }, mts: { label: 'TS', color: '#1976d2' }, cts: { label: 'TS', color: '#1976d2' }, tsx: { label: 'TSX', color: '#1976d2' },
-        py: { label: 'PY', color: '#1976d2' }, pyi: { label: 'PY', color: '#1976d2' },
-        go: { label: 'GO', color: '#00acc1' }, rs: { label: 'RS', color: '#d35400' },
-        java: { label: 'JAVA', color: '#c62828' }, kt: { label: 'KT', color: '#7b1fa2' }, kts: { label: 'KT', color: '#7b1fa2' }, scala: { label: 'SCALA', color: '#c62828' },
-        c: { label: 'C', color: '#1565c0' }, h: { label: 'H', color: '#1565c0' }, cpp: { label: 'CPP', color: '#1565c0' }, cc: { label: 'CPP', color: '#1565c0' }, cxx: { label: 'CPP', color: '#1565c0' }, hpp: { label: 'CPP', color: '#1565c0' }, hh: { label: 'CPP', color: '#1565c0' },
-        cs: { label: 'C#', color: '#512da8' }, rb: { label: 'RB', color: '#c62828' }, php: { label: 'PHP', color: '#6a1b9a' }, swift: { label: 'SWIFT', color: '#e65100' },
-        sh: { label: 'SH', color: '#2e7d32' }, bash: { label: 'SH', color: '#2e7d32' }, zsh: { label: 'SH', color: '#2e7d32' }, fish: { label: 'SH', color: '#2e7d32' },
-        ps1: { label: 'PS1', color: '#1976d2' }, bat: { label: 'BAT', color: '#546e7a' }, cmd: { label: 'BAT', color: '#546e7a' },
-        lua: { label: 'LUA', color: '#1565c0' }, sql: { label: 'SQL', color: '#1565c0' }, vue: { label: 'VUE', color: '#2e7d32' },
-        svelte: { label: 'SVELTE', color: '#e65100' }, astro: { label: 'ASTRO', color: '#e65100' },
-        png: { label: 'IMG', color: '#ad1457' }, jpg: { label: 'IMG', color: '#ad1457' }, jpeg: { label: 'IMG', color: '#ad1457' }, webp: { label: 'IMG', color: '#ad1457' },
-        gif: { label: 'IMG', color: '#ad1457' }, bmp: { label: 'IMG', color: '#ad1457' }, tif: { label: 'IMG', color: '#ad1457' }, tiff: { label: 'IMG', color: '#ad1457' },
-        ico: { label: 'ICO', color: '#ad1457' }, svg: { label: 'SVG', color: '#ad1457' },
-        zip: { label: 'ZIP', color: '#6d4c41' }, '7z': { label: '7Z', color: '#6d4c41' }, rar: { label: 'RAR', color: '#6d4c41' }, gz: { label: 'GZ', color: '#6d4c41' }, tar: { label: 'TAR', color: '#6d4c41' },
-        mp3: { label: 'AUDIO', color: '#8e24aa' }, wav: { label: 'AUDIO', color: '#8e24aa' }, flac: { label: 'AUDIO', color: '#8e24aa' },
-        mp4: { label: 'VIDEO', color: '#8e24aa' }, mkv: { label: 'VIDEO', color: '#8e24aa' }, mov: { label: 'VIDEO', color: '#8e24aa' },
-        repository: { label: 'REPO', color: '#5e35b1' }, session: { label: 'CHAT', color: '#5e35b1' },
-      }
-
-      /** 文件类型图标：有 Windows 缩略图用缩略图，否则按已知扩展名显示对应文件图标。 */
       function FileTypeIcon(props) {
         const item = props.item
-        const [broken, setBroken] = React.useState(false)
-        if (item.thumbnail && !broken) {
-          return h('img', {
-            src: item.thumbnail,
-            alt: '',
-            loading: 'lazy',
-            decoding: 'async',
-            onError: () => setBroken(true),
-            style: { width: '26px', height: '26px', objectFit: 'cover', borderRadius: '3px', display: 'block', border: '1px solid var(--dsw-alias-border-l2)' },
-          })
-        }
         const format = String(item.format || '').toLowerCase()
         const known = FILE_TYPE_ICONS[format] || null
         const label = known ? known.label : (format === '' ? 'TXT' : format.slice(0, 4).toUpperCase())
@@ -1588,6 +1387,34 @@
               fontSize: label.length > 3 ? '6px' : '7px', fontWeight: 700, lineHeight: '9px', letterSpacing: '0.2px',
             },
           }, label),
+        )
+      }
+
+      /** 重建按钮旁的圆形问号说明。 */
+      function ReindexHelp() {
+        const t = copy()
+        const [open, setOpen] = React.useState(false)
+        return h('div', { style: { position: 'relative', display: 'inline-flex' } },
+          h('button', {
+            type: 'button',
+            style: { ...BTN, borderRadius: '50%', padding: '2px 8px', lineHeight: '18px' },
+            title: t.reindexHelpTitle,
+            'aria-label': t.reindexHelpTitle,
+            onClick: () => setOpen((value) => !value),
+          }, '?'),
+          open ? h('div', {
+            style: {
+              position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 30,
+              width: 'min(380px, 78vw)', padding: '10px', boxSizing: 'border-box',
+              background: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)',
+              border: '1px solid var(--dsw-alias-border-l2)', borderRadius: '8px',
+              boxShadow: '0 6px 18px rgba(0,0,0,0.28)', fontSize: '12px', lineHeight: '18px',
+            },
+          },
+            h('p', { style: { margin: '0 0 8px' } }, t.reindexHelpIncremental),
+            h('p', { style: { margin: '0 0 8px' } }, t.reindexHelpForce),
+            h('button', { type: 'button', style: BTN, onClick: () => setOpen(false) }, t.reindexHelpClose),
+          ) : null,
         )
       }
 
@@ -1710,14 +1537,14 @@
                 onClick: (event) => {
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
                   setMenuPath(null)
-                  if (typeof props.onExternal === 'function') props.onExternal(item, 'processed', 'choose')
+                  if (typeof props.onExternal === 'function') props.onExternal(item, 'default')
                 },
               }, '📂 ' + t.externalOpen),
               h('button', {
                 type: 'button',
                 style: { ...BTN, padding: '2px 5px', fontSize: '10px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0 },
-                title: t.galleryProcessed + ' / ' + t.galleryOriginal,
-                'aria-label': t.galleryProcessed + ' / ' + t.galleryOriginal,
+                title: t.galleryChooseWith + ' / ' + t.galleryProcessed,
+                'aria-label': t.galleryChooseWith + ' / ' + t.galleryProcessed,
                 onClick: (event) => {
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
                   setMenuPath((prev) => prev === item.path ? null : item.path)
@@ -1736,38 +1563,13 @@
               h('div', { style: { ...SMALL, padding: '2px 6px 5px', color: 'var(--dsw-alias-label-secondary)' } }, t.galleryChooseWith),
               h('button', {
                 type: 'button',
-                style: { ...BTN, display: 'block', width: '100%', textAlign: 'left', fontSize: '11px', marginBottom: '3px' },
-                onClick: (event) => {
-                  if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
-                  setMenuPath(null)
-                  if (typeof props.onExternal === 'function') props.onExternal(item, 'processed', 'choose')
-                },
-              }, t.galleryProcessed + '…'),
-              h('button', {
-                type: 'button',
-                disabled: !item.original,
-                style: {
-                  ...BTN, display: 'block', width: '100%', textAlign: 'left', fontSize: '11px',
-                  opacity: item.original ? 1 : 0.45, cursor: item.original ? 'pointer' : 'not-allowed',
-                },
-                title: item.original || t.galleryOriginalMissing,
-                onClick: (event) => {
-                  if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
-                  if (!item.original) return
-                  setMenuPath(null)
-                  if (typeof props.onExternal === 'function') props.onExternal(item, 'original', 'choose')
-                },
-              }, item.original ? t.galleryOriginal + '…' : t.galleryOriginalMissing),
-              h('div', { style: { height: '1px', margin: '5px 2px', background: 'var(--dsw-alias-border-l2)' } }),
-              h('button', {
-                type: 'button',
                 style: { ...BTN, display: 'block', width: '100%', textAlign: 'left', fontSize: '11px' },
                 onClick: (event) => {
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
                   setMenuPath(null)
-                  if (typeof props.onExternal === 'function') props.onExternal(item, 'processed', 'default')
+                  if (typeof props.onExternal === 'function') props.onExternal(item, 'choose')
                 },
-              }, t.galleryDefaultOpen),
+              }, t.galleryProcessed + '…'),
             ) : null,
             h(DeleteButton, {
               key: 'delete-row',
@@ -2401,10 +2203,7 @@
             h(CorpusGallery, {
               key: 'corpus-gallery',
               collections,
-              onExternal: (item, target, mode) => {
-                const path = target === 'original' && item.original ? item.original : item.path
-                openExternal(path, mode === 'default' ? 'default' : 'choose')
-              },
+              onExternal: (item, mode) => openExternal(item.path, mode === 'choose' ? 'choose' : 'default'),
               onDeleted: () => { loadOverview() },
             }),
             h('div', { style: GRID },
@@ -2413,92 +2212,6 @@
             ),
             h('p', { style: FOOT }, t.foot),
           ),
-        )
-      }
-
-      /**
-       * 右栏「语料查看」面板：文件列表点击后通过模块级事件把请求推到这里。
-       */
-      function PreviewPanel() {
-        const t = copy()
-        const [request, setRequest] = React.useState(previewRequest)
-        const [state, setState] = React.useState({ loading: false, error: null, data: null })
-
-        const load = React.useCallback((target) => {
-          if (!target || typeof target.path !== 'string' || target.path === '') return
-          setState({ loading: true, error: null, data: null })
-          postJson(API.read, { path: target.path, from: Math.max(1, num(target.from) || 1), lines: PAGE_LINES })
-            .then((body) => setState({ loading: false, error: null, data: body }))
-            .catch((error) => setState({ loading: false, error: errorText(error), data: null }))
-        }, [])
-
-        React.useEffect(() => {
-          const subscriber = (next) => setRequest(next)
-          previewSubscribers.add(subscriber)
-          return () => { previewSubscribers.delete(subscriber) }
-        }, [])
-
-        React.useEffect(() => { load(request) }, [request, load])
-
-        const openExternal = (mode) => {
-          if (!request || typeof request.path !== 'string') return
-          postJson(API.openExternal, { path: request.path, mode }).catch((error) => {
-            setState((prev) => ({ ...prev, error: t.externalOpenFailed + errorText(error) }))
-          })
-        }
-
-        const go = (from) => {
-          if (!request) return
-          const next = { ...request, from: Math.max(1, num(from) || 1) }
-          setRequest(next)
-        }
-
-        if (!request) {
-          return h('section', { style: SECTION },
-            h('h2', { style: H2 }, t.previewTabTitle),
-            h('p', { style: SMALL }, t.previewEmpty))
-        }
-
-        const data = state.data
-        const from = num(data && data.from) || num(request.from) || 1
-        const to = num(data && data.to) || from
-        const total = num(data && data.totalLines) || 0
-        return h('section', { style: SECTION },
-          h('h2', { style: H2 }, t.previewTabTitle),
-          h('div', { style: { ...ROW, marginBottom: '8px' } },
-            h('span', { style: { ...SMALL, wordBreak: 'break-all', flex: '1 1 auto', minWidth: 0 } }, request.path),
-            data ? h('span', { style: CHIP }, t.pageInfo(from, to, total)) : null,
-          ),
-          h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' } },
-            h('div', { style: { display: 'flex', alignItems: 'center' } },
-              h('button', {
-                type: 'button',
-                style: { ...BTN, borderTopRightRadius: 0, borderBottomRightRadius: 0, paddingRight: '9px' },
-                title: t.externalOpen,
-                onClick: () => openExternal('default'),
-              }, '📂 ' + t.externalOpen),
-              h('button', {
-                type: 'button',
-                style: { ...BTN, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, paddingLeft: '7px', paddingRight: '7px' },
-                title: t.externalOpenChoose,
-                'aria-label': t.externalOpenChoose,
-                onClick: () => openExternal('choose'),
-              }, '▾'),
-            ),
-            h('button', {
-              type: 'button', style: BTN,
-              disabled: state.loading || !data || from <= 1,
-              onClick: () => go(from - PAGE_LINES),
-            }, t.prevPage),
-            h('button', {
-              type: 'button', style: BTN,
-              disabled: state.loading || !data || to >= total,
-              onClick: () => go(to + 1),
-            }, t.nextPage),
-          ),
-          state.loading ? h('p', { style: SMALL }, t.loading) : null,
-          state.error !== null ? h('p', { role: 'status', style: STATUS(false) }, t.readFailed + state.error) : null,
-          data ? h('pre', { style: { ...PRE, maxHeight: 'none' } }, numberedText(data)) : null,
         )
       }
 

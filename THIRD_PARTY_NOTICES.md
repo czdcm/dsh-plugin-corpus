@@ -35,7 +35,7 @@
 
 ### 3.3 系统能力
 
-- **Windows OCR / Windows Shell 缩略图**：通过 PowerShell 5.1 调用 `Windows.Media.Ocr`、`Windows.Data.Pdf`、`StorageFile.GetThumbnailAsync` 等系统 API，不再分发微软二进制。
+- **Windows OCR**：通过 PowerShell 5.1 调用 `Windows.Media.Ocr`、`Windows.Data.Pdf` 等系统 API，不再分发微软二进制。
 - **MinGW 运行时 DLL**：与 `pdftotext.exe` 一起随 Poppler 包分发，受其运行时例外和 GPL 义务约束；`-WithoutPdftotext` 包不包含。
 - **测试夹具和 Markdown 文档**：由本项目创建，不包含第三方语料。
 

@@ -356,7 +356,7 @@ export function apply(ctx, config) {
 
   ctx.tools.register(defineTool({
     name: 'corpus_structure',
-    description: '与主会话交流的接口：把主会话拿到的仓库/目录/文件/文本交给内置小代理总结并结构化。典型用法：先按用户要求把 GitHub 仓库 git clone/pull 到本地，再调用本工具传 path（目录或文件）和 collection；或把抓取到的网页/API 文本用 text 传入。同步返回结构化 Markdown，并写入 <collection>/<import>/processed/、保留原件/来源清单、触发索引重建。',
+    description: '与主会话交流的接口：把主会话拿到的仓库/目录/文件/文本交给内置小代理总结并结构化。典型用法：先按用户要求把 GitHub 仓库 git clone/pull 到本地，再调用本工具传 path（目录或文件）和 collection；或把抓取到的网页/API 文本用 text 传入。同步返回结构化 Markdown，并写入 <collection>/<import>/processed/、触发索引重建；不保存源文件。',
     parameters: {
       path: { type: 'string', description: '本机仓库/目录/文件路径；相对路径按当前会话工作区解析。与 text 二选一' },
       text: { type: 'string', description: '主会话直接提供的文本内容（例如抓到的 README/网页/API 结果）。与 path 二选一' },
@@ -407,7 +407,6 @@ export function apply(ctx, config) {
         title: result.title,
         source: result.source,
         target: result.target || null,
-        original: result.original || null,
         folder: result.folder || null,
         collection: result.collection || collection,
         git: result.git || null,
@@ -483,7 +482,6 @@ export function apply(ctx, config) {
         title: result.title,
         sessionId: String(session.id || requestedId || ''),
         target: result.target || null,
-        original: result.original || null,
         folder: result.folder || null,
         collection: result.collection || collection,
         transcript: transcript.stats,

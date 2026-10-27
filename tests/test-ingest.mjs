@@ -167,7 +167,7 @@ try {
   ok('目录导入：running→done、total/done/failed、items、recent 快照')
 
   // -------------------------------------------------------------------------
-  // 2. 每文件一个独立文件夹：originals/processed/.meta.json + items[].target/original/folder
+  // 2. 每文件一个独立文件夹：processed/.meta.json，不保存源文件
   // -------------------------------------------------------------------------
   const readmeItem = done.items.find((item) => item.source === 'readme.md')
   assert(readmeItem && readmeItem.ok === true, '应包含 readme.md 的 item')
@@ -176,14 +176,12 @@ try {
   assert(readmeItem.folder === readmeFolder, 'items[].folder 应与路径中的文件夹一致')
   assert(readmeItem.target === `docs/inbox/${readmeFolder}/processed/AI-结构化标题.md`, 'items[].target 应指向 processed/<标题slug>.md，实际 ' + readmeItem.target)
   assert(fs.existsSync(absOf(readmeItem.target)), 'processed Markdown 应落盘：' + absOf(readmeItem.target))
-  assert(readmeItem.original === `docs/inbox/${readmeFolder}/originals/readme.md`, 'items[].original 应指向 originals/<原文件名>，实际 ' + readmeItem.original)
-  assert(fs.existsSync(absOf(readmeItem.original)), '所有格式（含 md）都应保留原件到 originals/')
-  assert(fs.readFileSync(absOf(readmeItem.original), 'utf8') === fs.readFileSync(readmeFile, 'utf8'), '原件内容应与源文件一致')
-  assert(fs.readdirSync(absOf(`docs/inbox/${readmeFolder}/originals`)).length === 1, '每个导入文件夹的 originals/ 里应有 1 个原件')
+  assert(!fs.existsSync(absOf(`docs/inbox/${readmeFolder}/originals`)), '不应再创建 originals/ 目录')
+  assert(readmeItem.original === undefined, 'items[] 不应再返回 original')
   const folders = new Set(done.items.map((item) => item.folder))
   assert(folders.size === 3 && done.items.every((item) => FOLDER_RE.test(item.folder)), '3 个文件应有 3 个独立导入文件夹，实际 ' + JSON.stringify([...folders]))
-  assert(done.items.every((item) => String(item.target).includes('/processed/') && String(item.original).includes('/originals/')), '每个 item 都应有 processed 与 originals 路径')
-  ok('导入布局：每个文件一个文件夹 + originals/processed/ + items[].target/original/folder')
+  assert(done.items.every((item) => String(item.target).includes('/processed/') && item.original === undefined), '每个 item 只应有 processed 路径')
+  ok('导入布局：每个文件一个文件夹 + processed/.meta.json，不保存源文件')
 
   const readmeDoc = readFrontMatter(absOf(readmeItem.target))
   assert(readmeDoc.front.title === '"AI 结构化标题"', 'front matter title 应取 AI 标题，实际 ' + readmeDoc.front.title)
@@ -192,22 +190,21 @@ try {
   assert(readmeDoc.front.collection === '"docs"', 'front matter collection=docs')
   assert(typeof readmeDoc.front.importedAt === 'string' && !Number.isNaN(Date.parse(JSON.parse(readmeDoc.front.importedAt))), 'front matter importedAt 应是 ISO 时间')
   assert(readmeDoc.front.aiStructured === 'true', 'front matter aiStructured=true')
-  assert(JSON.parse(readmeDoc.front.original) === readmeItem.original, 'front matter original 应指向本条导入的原件，实际 ' + readmeDoc.front.original)
+  assert(readmeDoc.front.original === undefined, 'front matter 不应再写 original')
   assert(readmeDoc.body.includes('# AI 结构化标题') && readmeDoc.body.includes('- 来自 fake agent'), '正文应是 AI 返回的 Markdown 原文')
   const htmlItem = done.items.find((item) => item.source === 'page.html')
   const htmlDoc = readFrontMatter(absOf(htmlItem.target))
-  assert(htmlDoc.front.format === '"html"' && JSON.parse(htmlDoc.front.original) === htmlItem.original, 'html item 的 front matter format/original')
-  assert(fs.existsSync(absOf(htmlItem.original)) && fs.statSync(absOf(htmlItem.original)).size === fs.statSync(htmlFile).size, 'html 原件入档且大小一致')
-  ok('front matter：title/source/format/importedAt/collection/original/aiStructured（原件对所有格式都保留）')
+  assert(htmlDoc.front.format === '"html"' && htmlDoc.front.original === undefined, 'html item 的 front matter format 且无 original')
+  ok('front matter：title/source/format/importedAt/collection/aiStructured（不再记录原件）')
 
   const meta = JSON.parse(fs.readFileSync(absOf(`docs/inbox/${readmeFolder}/.meta.json`), 'utf8'))
-  for (const key of ['source', 'original', 'processed', 'title', 'format', 'mediaType', 'importedAt', 'aiStructured', 'bytes', 'warnings']) {
+  for (const key of ['source', 'processed', 'title', 'format', 'mediaType', 'importedAt', 'aiStructured', 'bytes', 'warnings']) {
     assert(Object.prototype.hasOwnProperty.call(meta, key), '.meta.json 缺字段 ' + key)
   }
-  assert(meta.source === 'readme.md' && meta.processed === readmeItem.target && meta.original === readmeItem.original, '.meta.json 的 source/processed/original')
+  assert(meta.source === 'readme.md' && meta.processed === readmeItem.target && meta.original === undefined, '.meta.json 的 source/processed 且无 original')
   assert(meta.title === 'AI 结构化标题' && meta.format === 'md' && meta.aiStructured === true, '.meta.json 的 title/format/aiStructured')
   assert(meta.bytes === fs.statSync(readmeFile).size && Array.isArray(meta.warnings), '.meta.json 的 bytes/warnings')
-  ok('导入文件夹 .meta.json：source/original/processed/title/format/mediaType/importedAt/aiStructured/bytes/warnings')
+  ok('导入文件夹 .meta.json：source/processed/title/format/mediaType/importedAt/aiStructured/bytes/warnings')
 
   assert(agent1.calls.length === 3, 'agent.structure 应被调用 3 次，实际 ' + agent1.calls.length)
   const htmlCall = agent1.calls.find((call) => call.meta.source === 'page.html')
@@ -250,12 +247,12 @@ try {
   const uploadItem = uploadDone.items[0]
   assert(uploadItem.aiStructured === false, 'ai:false 时 item.aiStructured=false')
   assert(/^uploads\/zone\/\d{8}-\d{6}-upload\/processed\/Upload-One\.md$/.test(uploadItem.target), 'target 应为 uploads/zone/<stamp>-upload/processed/Upload-One.md，实际 ' + uploadItem.target)
-  assert(uploadItem.original === `uploads/zone/${uploadItem.folder}/originals/upload.md`, 'uploads 的 original 路径')
-  assert(fs.existsSync(absOf(uploadItem.original)) && fs.readFileSync(absOf(uploadItem.original), 'utf8') === uploadBody, 'uploads 文字文件也应保留原件且内容一致')
+  assert(uploadItem.original === undefined, 'uploads 不再返回 original')
+  assert(!fs.existsSync(absOf(`uploads/zone/${uploadItem.folder}/originals`)), 'uploads 不创建 originals/')
   const uploadDoc = readFrontMatter(absOf(uploadItem.target))
   assert(uploadDoc.front.aiStructured === 'false' && uploadDoc.front.source === '"upload.md"', 'ai:false 的 front matter')
   assert(uploadDoc.body.includes('# Upload One') && uploadDoc.body.includes('> 导入自 upload.md（md）。'), '确定性回退正文：标题 + 来源 + 正文')
-  ok('uploads（base64）：独立文件夹 + prefix + ai:false 不走 agent + 确定性 Markdown + 原件入档')
+  ok('uploads（base64）：独立文件夹 + prefix + ai:false 不走 agent + 确定性 Markdown，不保存源文件')
 
   // 同源重复导入：不覆盖，每次都开新文件夹（folder 冲突时自动 -2）
   const uploadAgain = manager2.start({ uploads: [{ name: 'upload.md', dataBase64: uploadBase64 }], collection: 'uploads', prefix: 'zone', ai: false })
@@ -324,7 +321,7 @@ try {
   assert(failingAgent.calls.length === 1, 'AI 只应尝试一次')
   const fallbackDoc = readFrontMatter(absOf(fallbackItem.target))
   assert(fallbackDoc.front.aiStructured === 'false' && fallbackDoc.body.includes('# Fallback Doc') && fallbackDoc.body.includes('> 导入自 fallback.md（md）。'), '回退内容应是确定性 Markdown（标题 + 来源 + 正文）')
-  assert(JSON.parse(fallbackDoc.front.original) === fallbackItem.original, '回退时 front matter 仍记录原件')
+  assert(fallbackDoc.front.original === undefined, '回退时 front matter 不再记录原件')
   ok('AI 抛错：确定性 Markdown 回退 + item.warning + aiStructured=false')
 
   // -------------------------------------------------------------------------

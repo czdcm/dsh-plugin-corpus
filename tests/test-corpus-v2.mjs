@@ -12,9 +12,9 @@
  *   · collectionStatus / stats —— 字段与数值（like、ripgrep、未建索引三种状态）；
  *   · jobs.createJobRunner —— 启动、单任务串行、wait 到 done、result、锁释放、
  *     陈旧锁（死 pid / 超过 2 小时）回收、活锁拒绝、dispose；
- *   · panel.createPanelRoutes —— 用假 req/res 驱动，20 条路由：/overview、/files、/search
+ *   · panel.createPanelRoutes —— 用假 req/res 驱动，17 条路由：/overview、/files、/search
  *    （普通 + workspace ACL 过滤）、/read、/reindex → /status、/policy、
- *    /access、/import/targets、POST /import、/import/status、/originals、/original、/thumbnail，
+ *    /access、/import/targets、POST /import、/import/status、/
  *    v1.5 的 GET /settings（形状/busy）、POST /settings/root（任务运行中 409、目标嵌套 400），
  *    同源 403、方法 405、未知集合 404、坏请求 400、无 ingest 服务时的降级。
  *
@@ -421,12 +421,12 @@ try {
   const routes = createPanelRoutes({ root, dshHome: home, jobs: panelJobs, sessionLookup, ingest: fakeIngest })
   const byPath = new Map(routes.map((route) => [route.path, route]))
 
-  assert(routes.length === 20, '面板应有 20 条路由，实际 ' + routes.length)
+  assert(routes.length === 17, '面板应有 17 条路由，实际 ' + routes.length)
   assert(routes.every((route) => route.kind === 'exact' && route.path.startsWith(PANEL_PREFIX)), '路由应为 exact 且带统一前缀')
-  for (const suffix of ['overview', 'files', 'search', 'read', 'reindex', 'status', 'policy', 'access', 'import/targets', 'import', 'import/status', 'originals', 'original', 'thumbnail', 'settings', 'settings/root', 'settings/open', 'gallery', 'delete']) {
+  for (const suffix of ['overview', 'files', 'search', 'read', 'reindex', 'status', 'policy', 'access', 'import/targets', 'import', 'import/status', 'settings', 'settings/root', 'settings/open', 'gallery', 'delete']) {
     assert(byPath.has(PANEL_PREFIX + '/' + suffix), '缺少路由 ' + suffix)
   }
-  ok('面板路由表：20 条 exact（v1.2 /access + v1.3 /import/* 与原件/缩略图），前缀 ' + PANEL_PREFIX)
+  ok('面板路由表：17 条 exact（v1.2 /access + v1.3 /import/*），前缀 ' + PANEL_PREFIX)
 
   const invokeRoutes = (routeList, method, url, body, headers = {}) => new Promise((resolve, reject) => {
     const route = routeList.find((item) => item.path === url.split('?')[0])
@@ -651,77 +651,6 @@ try {
   assert(importNoIngest.status === 503 && importNoIngest.body.ok === false, 'POST /import 无 ingest 服务时 503')
   ok('导入路由降级：无 ingest 服务时 targets/status 可用、POST 503')
 
-  // ---- v1.3：原件库 / 原件字节 / 缩略图（GET /originals、/original、/thumbnail） ----
-  const pngBytes = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-    'base64',
-  )
-  const fixtureFolder = '20260101-120000-fixture'
-  const fixtureRel = path.join('alpha', fixtureFolder)
-  fs.mkdirSync(path.join(root, fixtureRel, 'originals'), { recursive: true })
-  fs.mkdirSync(path.join(root, fixtureRel, 'processed'), { recursive: true })
-  fs.writeFileSync(path.join(root, fixtureRel, 'originals', 'photo.png'), pngBytes)
-  fs.writeFileSync(path.join(root, fixtureRel, 'processed', 'Fixture.md'), '# Fixture\n')
-  const fixtureOriginal = `alpha/${fixtureFolder}/originals/photo.png`
-  const fixtureProcessed = `alpha/${fixtureFolder}/processed/Fixture.md`
-  fs.writeFileSync(path.join(root, fixtureRel, '.meta.json'), JSON.stringify({
-    version: 1,
-    collection: 'alpha',
-    folder: fixtureFolder,
-    prefix: '',
-    source: 'photo.png',
-    original: fixtureOriginal,
-    processed: fixtureProcessed,
-    title: 'Fixture 标题',
-    format: 'png',
-    mediaType: 'image/png',
-    importedAt: '2026-01-01T12:00:00.000Z',
-    aiStructured: false,
-    bytes: pngBytes.length,
-    warnings: [],
-  }, null, 2))
-  // v1.2 旧布局兼容：<root>/.corpus/originals/<collection>/<file>
-  fs.mkdirSync(path.join(root, '.corpus', 'originals', 'alpha'), { recursive: true })
-  fs.writeFileSync(path.join(root, '.corpus', 'originals', 'alpha', 'legacy.txt'), 'legacy original\n')
-
-  const originalsRes = await invoke('GET', PANEL_PREFIX + '/originals')
-  assert(originalsRes.status === 200 && originalsRes.body.ok === true, '/originals 200')
-  assert(originalsRes.body.total >= 2 && Array.isArray(originalsRes.body.imports), '/originals total/imports')
-  assert(Array.isArray(originalsRes.body.collections) && originalsRes.body.collections.length === 3, '/originals 带集合候选')
-  const fixtureEntry = originalsRes.body.imports.find((item) => item.folder === fixtureFolder)
-  assert(fixtureEntry, '/originals 应列出新布局的导入文件夹')
-  assert(fixtureEntry.collection === 'alpha' && fixtureEntry.name === 'photo.png' && fixtureEntry.original === fixtureOriginal && fixtureEntry.processed === fixtureProcessed, '/originals 新布局字段 collection/name/original/processed')
-  assert(fixtureEntry.title === 'Fixture 标题' && fixtureEntry.format === 'png' && fixtureEntry.mediaType === 'image/png' && fixtureEntry.image === true, '/originals title/format/mediaType/image')
-  assert(fixtureEntry.bytes === pngBytes.length && typeof fixtureEntry.mtimeMs === 'number' && typeof fixtureEntry.importedAt === 'string' && fixtureEntry.aiStructured === false, '/originals bytes/mtimeMs/importedAt/aiStructured')
-  const legacyEntry = originalsRes.body.imports.find((item) => item.folder === null)
-  assert(legacyEntry && legacyEntry.collection === 'alpha' && legacyEntry.name === 'legacy.txt' && legacyEntry.original === '.corpus/originals/alpha/legacy.txt' && legacyEntry.processed === null, '/originals 应兼容旧 .corpus/originals 布局（folder:null/processed:null）')
-  const filteredOriginals = await invoke('GET', PANEL_PREFIX + '/originals?collection=alpha')
-  assert(filteredOriginals.body.ok === true && filteredOriginals.body.imports.length === 1 && filteredOriginals.body.imports.every((item) => item.collection === 'alpha'), '/originals?collection= 过滤（新布局 1 条；旧布局兼容只在无过滤时列出）')
-  assert(filteredOriginals.body.imports[0].name === 'photo.png', '/originals?collection=alpha 应只含 photo.png')
-  const emptyOriginals = await invoke('GET', PANEL_PREFIX + '/originals?collection=code')
-  assert(emptyOriginals.body.ok === true && emptyOriginals.body.imports.length === 0, '/originals?collection=code 无原件')
-  ok('面板 /originals：新布局（folder/originals/processed/.meta.json）+ 旧布局兼容 + collection 过滤')
-
-  const encodedOriginal = encodeURIComponent(fixtureOriginal)
-  const originalBytes = await invokeBinary('GET', PANEL_PREFIX + '/original?path=' + encodedOriginal)
-  assert(originalBytes.status === 200 && String(originalBytes.headers['content-type']).startsWith('image/png'), '/original 200 + image/png，实际 ' + originalBytes.status + ' / ' + originalBytes.headers['content-type'])
-  assert(originalBytes.body.equals(pngBytes), '/original 应返回原件字节')
-  assert(String(originalBytes.headers['cache-control'] || '').includes('max-age'), '/original 带缓存头')
-  const originalHead = await invokeBinary('HEAD', PANEL_PREFIX + '/original?path=' + encodedOriginal)
-  assert(originalHead.status === 200 && originalHead.body.length === 0, '/original HEAD 支持且无响应体')
-  const originalNoOriginal = await invoke('GET', PANEL_PREFIX + '/original?path=' + encodeURIComponent('alpha/readme.md'))
-  assert(originalNoOriginal.status === 400 && originalNoOriginal.body.ok === false, '/original 路径不含 originals 段应 400')
-  const originalTraversal = await invoke('GET', PANEL_PREFIX + '/original?path=' + encodeURIComponent('../corpus-access.json'))
-  assert(originalTraversal.status === 400 && originalTraversal.body.ok === false, '/original 越界/非法路径应 400')
-  ok('面板 /original：原件字节 + content-type/缓存头 + HEAD + 非法/越界路径 400')
-
-  const thumbBytes = await invokeBinary('GET', PANEL_PREFIX + '/thumbnail?path=' + encodedOriginal + '&size=128')
-  assert(thumbBytes.status === 200 && String(thumbBytes.headers['content-type']).startsWith('image/') && thumbBytes.body.length > 0, '/thumbnail 应返回 image/*（Windows 缩略图或图片回退原图），实际 ' + thumbBytes.status + ' / ' + thumbBytes.headers['content-type'])
-  assert(String(thumbBytes.headers['cache-control'] || '').includes('max-age'), '/thumbnail 带缓存头')
-  const thumbBad = await invoke('GET', PANEL_PREFIX + '/thumbnail?path=' + encodeURIComponent('alpha/readme.md'))
-  assert(thumbBad.status === 400 && thumbBad.body.ok === false, '/thumbnail 路径不含 originals 段应 400')
-  ok('面板 /thumbnail：图片原件返回 image/*（缩略图或原图回退）+ 非法路径 400')
-
   // ---- v1.5：语料库根目录设置（GET /settings + POST /settings/root 的忙/非法路径） ----
   // 不在这里做真实迁移（迁移语义由 test-settings.mjs 用临时根覆盖）：
   // 这个面板挂着 fake 导入任务，正好验证 busy 标记与 409；400 用一定会被拒绝的目标。
@@ -767,9 +696,6 @@ try {
   const methodImport = await invoke('GET', PANEL_PREFIX + '/import')
   const methodTargets = await invoke('POST', PANEL_PREFIX + '/import/targets', {})
   const methodImportStatus = await invoke('POST', PANEL_PREFIX + '/import/status', {})
-  const methodOriginals = await invoke('POST', PANEL_PREFIX + '/originals', {})
-  const methodOriginal = await invoke('POST', PANEL_PREFIX + '/original', {})
-  const methodThumbnail = await invoke('POST', PANEL_PREFIX + '/thumbnail', {})
   const methodSettings = await invoke('POST', PANEL_PREFIX + '/settings', {})
   const methodSettingsRoot = await invoke('GET', PANEL_PREFIX + '/settings/root')
   const methodSettingsOpen = await invoke('GET', PANEL_PREFIX + '/settings/open')
@@ -777,11 +703,11 @@ try {
     methodSearch.status === 405 && methodOverview.status === 405 && methodStatus.status === 405
     && methodAccess.status === 405 && methodPolicy.status === 405
     && methodImport.status === 405 && methodTargets.status === 405 && methodImportStatus.status === 405
-    && methodOriginals.status === 405 && methodOriginal.status === 405 && methodThumbnail.status === 405
+   
     && methodSettings.status === 405 && methodSettingsRoot.status === 405 && methodSettingsOpen.status === 405,
-    '方法不匹配应 405（含 v1.3 导入/原件/缩略图与 v1.5 /settings 路由）',
+    '方法不匹配应 405（含 v1.3 导入与 v1.5 /settings 路由）',
   )
-  ok('面板方法限制：GET/POST 不匹配返回 405（含 /import/*、/originals、/original、/thumbnail 与 /settings 系列）')
+  ok('面板方法限制：GET/POST 不匹配返回 405（含 /import/* 与 /settings 系列）')
 
   // -------------------------------------------------------------------------
   // 7. importInto 输出限流与单次上限（契约 1.1 修订：fileCount / files ≤ 100）

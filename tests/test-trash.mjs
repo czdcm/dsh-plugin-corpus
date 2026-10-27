@@ -64,7 +64,7 @@ try {
     sessionLookup: () => null,
     ingest: { status: () => ({ active: null, recent: [] }), limits: { maxFiles: 200, maxUploadBytes: 1024 } },
   })
-  assert(routes.length === 20, '面板路由 19 条，实际 ' + routes.length)
+  assert(routes.length === 17, '面板路由 17 条，实际 ' + routes.length)
   const route = routes.find((item) => item.path === '/api/dsh-plugin-corpus/delete')
   assert(route !== undefined, '存在 /delete 路由')
   const body = JSON.stringify({ path: 'alpha/legacy.md' })

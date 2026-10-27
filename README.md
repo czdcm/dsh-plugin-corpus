@@ -13,16 +13,16 @@
 - **11 个模型工具**：检索、读取、列表、重建、状态、导入、摄取、仓库/内容结构化、会话总结、删除、权限检查。
 - **批量导入**：浏览器一次选择多个文件；本机路径支持多行文件/目录，目录递归扫描；同一批全部进入同一个集合。
 - **公式保留**：HTML MathML、Word/PowerPoint 内嵌 OMML、常见 Unicode 数学符号和已有 LaTeX 统一规范成 `$...$` / `$$...$$`；PDF 的公式行也会保留并尽可能转成 LaTeX 公式块。
-- **文档导入**：Markdown、纯文本、HTML、CSV、PDF、DOCX、XLSX、PPTX 和常见图片；每次导入保留 `originals/`（供人看）和 `processed/`（供模型读）。
+- **文档导入**：Markdown、纯文本、HTML、CSV、PDF、DOCX、XLSX、PPTX 和常见图片；每次导入只写 `processed/`（供模型读）；源文件由用户自行管理。
 - **内置小代理**：固定提示词、单轮后台调用，不污染主会话；明确要求公式输出 LaTeX。
 - **主会话接口**：把克隆的仓库或当前会话总结成语料。
 - **Web 面板**：左侧栏语料库页面（导入、检索、文件列表、集合折叠、删除、根目录设置）；检索只负责定位，查看直接用外部软件；文件列表每行提供外部打开按钮。
-- **外部查看**：每行「用外部软件打开」会唤出 Windows「打开方式」，默认目标是**处理后语料**；点 `▾` 可切换「处理后语料（默认）」或「原文件」，也可选「用默认程序直接打开」。
-- **Windows 辅助能力**：内置 OCR、缩略图脚本，可选 OfficeCLI/pdftotext。
+- **外部查看**：每行「用外部软件打开」用 Windows 默认关联程序打开**处理后语料**；点 `▾` 只保留「选择软件打开」入口，用于临时选择其他程序。
+- **Windows 辅助能力**：内置 OCR，可选 OfficeCLI/pdftotext。
 
 ## 环境要求
 
-- Windows 10/11（OCR/缩略图依赖 Windows 能力）
+- Windows 10/11（OCR 依赖 Windows 能力）
 - 已安装并可用的 DeepSeek Harness
 - Node.js 24（或 DSH 自带 Node）
 - PowerShell 5.1（Windows 脚本和打包）
@@ -72,7 +72,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 <语料根>/
 ├─ <集合>/
 │  └─ <导入文件夹>/
-│     ├─ originals/     原文件（供人看；不索引）
 │     ├─ processed/     模型使用的 Markdown（含 LaTeX 公式）
 │     └─ .meta.json
 └─ .corpus/
@@ -83,7 +82,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
    └─ trash/            软删除内容，可手动恢复
 ```
 
-模型只检索/读取 `processed/`。`originals/` 不进入索引，也不允许 `corpus_read` 读取。
+模型只检索/读取 `processed/`；插件不再保存或提供源文件。
 
 ## 工具
 
@@ -110,8 +109,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 ```text
 GET  /overview          GET  /files             POST /search
 POST /read              POST /reindex           GET  /status
-GET  /access            GET  /originals         GET  /original
-GET  /thumbnail         GET  /import/targets    POST /import
+GET  /access            GET  /import/targets    POST /import
 GET  /import/status     POST /delete            GET  /gallery
 GET  /settings          POST /settings/root     POST /settings/open
 POST /open-external
@@ -144,7 +142,7 @@ GET/POST /policy
 ## 安全
 
 - 面板是本地管理界面，没有公网认证层；只监听本机。
-- 路径解析限制在语料根内；`originals` 路径被 `corpus_read` 拒绝。
+- 路径解析限制在语料根内。
 - 删除是软删除，进入 `.corpus/trash/` 可手动恢复。
 - 本机 ACL 文件不要提交或分享。
 

@@ -59,14 +59,9 @@ Write-Host '== 公式识别与 LaTeX 规范化 =='
 if ($LASTEXITCODE -ne 0) { throw 'test-formulas.mjs 失败' }
 
 Write-Host ''
-Write-Host '== v1.3 导入任务与小代理回退 =='
+Write-Host '== v1.3 导入任务与小代理回退（不再保存原件） =='
 & $Node tests\test-ingest.mjs
 if ($LASTEXITCODE -ne 0) { throw 'test-ingest.mjs 失败' }
-
-Write-Host ''
-Write-Host '== v1.3 原件库与 Windows 缩略图 =='
-& $Node tests\test-originals.mjs
-if ($LASTEXITCODE -ne 0) { throw 'test-originals.mjs 失败' }
 
 Write-Host ''
 Write-Host '== v1.4 仓库/内容结构化（corpus_structure） =='
@@ -94,7 +89,7 @@ Write-Host '== v1.7 删除语料（软删除/trash） =='
 if ($LASTEXITCODE -ne 0) { throw 'test-trash.mjs 失败' }
 
 Write-Host ''
-Write-Host '== 插件入口集成（Cordis 桩，11 工具/19 路由） =='
+Write-Host '== 插件入口集成（Cordis 桩，11 工具/17 路由） =='
 & $Node tests\test-plugin-mount.mjs
 if ($LASTEXITCODE -ne 0) { throw 'test-plugin-mount.mjs 失败' }
 

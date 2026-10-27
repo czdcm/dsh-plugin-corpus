@@ -29,7 +29,7 @@
        │ 文件系统 + node:sqlite
 ┌──────▼──────────────────────────────────────────────────┐
 │ 语料根（默认 ~/.dsh/corpus）                              │
-│  <collection>/...processed/*.md + originals/ + .meta.json │
+│  <collection>/...processed/*.md + .meta.json             │
 │  .corpus/index/*.sqlite、config、thumbs、trash            │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -46,7 +46,7 @@
 |---|---|---|---|
 | **JavaScript（ESM，Node.js）** | 宿主全部逻辑、客户端 UI | ~7,900 行（`plugin/lib/*.js`） | ★★★★★ |
 | **JavaScript（.mjs 测试）** | 14 个自包含验收脚本 | ~4,400 行 | ★★★★ |
-| **PowerShell 5.1** | Windows OCR、缩略图、测试/部署/打包脚本 | ~340 行 | ★★（只改 Windows 能力时） |
+| **PowerShell 5.1** | Windows OCR、测试/部署/打包脚本 | ~340 行 | ★★（只改 Windows 能力时） |
 | **SQL** | SQLite 建表 / 查询 / 插入 | 嵌在 `engine.js` | ★★★ |
 | **JSON / YAML** | 插件清单、配置、策略、state | 少量 | ★★ |
 | **Markdown** | 语料内容、文档 | ~1,700 行（项目文档） | ★ |
@@ -66,7 +66,7 @@
 | **React** | 客户端 UI；函数组件 + hooks，无 JSX | `const React = require('react')` |
 | **Schemastery** | 插件配置 schema（默认值/范围） | `export const Config` |
 | **SQLite（node:sqlite）** | 每集合一份索引，WAL | `DatabaseSync` |
-| **Windows PowerShell 5.1 + WinRT** | PDF 渲染/OCR、Shell 缩略图 | `ocr_windows.ps1`、`thumb_windows.ps1` |
+| **Windows PowerShell 5.1 + WinRT** | PDF 渲染/OCR | `ocr_windows.ps1` |
 | **Poppler pdftotext** | 文字版 PDF 直接提取 | `vendor/pdftotext/` |
 | **OfficeCLI** | Office 文档文本提取（优先），失败回退纯 JS | `vendor/officecli/` |
 | **纯 JS ZIP+XML** | docx/xlsx/pptx 兜底解析 | `zip.js` + `office.js` |
@@ -91,7 +91,7 @@ dsh-plugin-corpus/
 │  ├─ cordis.patch.yml      组合补丁：向 DSH 组合插入 corpus 插件
 │  └─ lib/
 │     ├─ index.js           ★ 宿主入口：Config、工具、提示词、webServer、dispose
-│     ├─ panel.js           ★ HTTP API：overview/files/search/read/reindex/status/policy/access/import/originals/settings/delete/gallery/thumbnail
+│     ├─ panel.js           ★ HTTP API：overview/files/search/read/reindex/status/policy/access/import/settings/delete/gallery
 │     ├─ engine.js          ★ 文件扫描、SQLite 索引、检索、按行读、集合统计
 │     ├─ jobs.js            ★ 重建任务管理（worker_threads + 锁）
 │     ├─ reindex-worker.js  worker 入口：调用 engine.reindex 并通过 postMessage 报进度
@@ -110,7 +110,6 @@ dsh-plugin-corpus/
 │     ├─ trash.js           软删除（文档/集合 → .corpus/trash）
 │     ├─ client.js          ★ 浏览器 UI：左栏页、右栏权限、导入、文件列表、设置
 │     ├─ ocr_windows.ps1    内置 Windows OCR（PDF 渲染 + Media.Ocr）
-│     └─ thumb_windows.ps1  内置 Windows Shell 缩略图调用
 ├─ tests/                   纯 Node 验收（不依赖第三方测试框架）
 ├─ tools/                   部署、测试、打包脚本
 ├─ README.md                安装、使用与工具/API 总览
@@ -170,7 +169,7 @@ corpus_ingest 工具 / 面板 POST /import
       → 后台任务（同一时刻一个）
       → extractDocument(file)  # HTML/PDF/Office/图片
       → 若 AI 开启：ingest-agent.structure() / structureImages()
-      → 写 <collection>/<import>/originals/ + processed/ + .meta.json
+      → 写 <collection>/<import>/processed/ + .meta.json
       → jobs.start({names:[collection]})
 ```
 
@@ -257,7 +256,6 @@ POST /delete {path|collection}
 <CORPUS_ROOT>/
 ├─ <collection>/
 │  └─ <YYYYMMDD-HHmmss>-<slug>/
-│     ├─ originals/<原文件>
 │     ├─ processed/<标题>.md     ← 模型只读这里
 │     └─ .meta.json
 ├─ .corpus/
@@ -281,7 +279,7 @@ meta(key TEXT PRIMARY KEY, value TEXT)
 
 - 粗排：`LIKE`（like 后端）或 `ripgrep`；
 - 精读：`corpus_read` 按行返回，不整篇塞上下文；
-- 删除 `originals` 目录不会被索引（`scanCollection` 跳过）。
+- 旧版遗留的 `originals/` 不会被索引（`scanCollection` 跳过）；新导入不再创建。
 
 ### 5.3 ACL
 
@@ -421,8 +419,8 @@ DSH 自带文档（可在 DSH 的 `dsh-docs` 语料库中检索）：
 |---|---|
 | 集合（collection） | 语料根下的一级目录 |
 | processed | 给模型检索/读取的结构化 Markdown |
-| originals | 人看的原件；模型不索引 |
-| per-import 布局 | 每次导入一个文件夹，含 originals/processed/.meta.json |
+| 源文件 | 由用户自行管理；插件不再保存或读取 |
+| per-import 布局 | 每次导入一个文件夹，含 processed/.meta.json |
 | 小代理 | 固定提示词、单轮、后台的 LLM 调用 |
 | 主会话接口 | `corpus_structure` / `corpus_summarize_session` 等工具 |
 | junction | Windows 目录联接；根目录迁移后旧路径指向新路径 |
@@ -439,7 +437,7 @@ DSH 自带文档（可在 DSH 的 `dsh-docs` 语料库中检索）：
 2. 按 Day 1 顺序读宿主，用 `corpus_search`/`corpus_read` 实际跑一遍。
 3. 做一个 ★ 练习（`corpus_count`），跑 `test-plugin-mount`。
 4. 改客户端一个小 UI，跑 `test-client-bundle`。
-5. 最后再碰 OCR/缩略图/Junction 这些 Windows 特性。
+5. 最后再碰 OCR/Junction 这些 Windows 特性。
 
 > 记住这个项目最核心的三条设计：
-> **1) 文件为中心，索引可重建；2) 模型只读 processed，原件只给人看；3. 一切写操作先过 ACL，删除/迁移都可回退。**
+> **1) 文件为中心，索引可重建；2) 模型只读 processed，插件不保存源文件；3. 一切写操作先过 ACL，删除/迁移都可回退。**
