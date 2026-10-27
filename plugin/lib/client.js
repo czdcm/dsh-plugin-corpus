@@ -43,6 +43,17 @@
       const PERMISSIONS_TAB_ID = 'dsh-plugin-corpus-permissions'
       const PERMISSIONS_KIND = 'corpus-permissions'
       const PERMISSIONS_GUIDE_ID = 'permissions'
+      const PREVIEW_TAB_ID = 'dsh-plugin-corpus-preview'
+      const PREVIEW_KIND = 'corpus-preview'
+      const PREVIEW_GUIDE_ID = 'preview'
+      let previewRequest = null
+      const previewSubscribers = new Set()
+      const publishPreview = (request) => {
+        previewRequest = request
+        for (const subscriber of previewSubscribers) {
+          try { subscriber(request) } catch { /* 单个订阅失败不影响其他 */ }
+        }
+      }
       // v1.3 主页面「导入语料」区：入口在页面头部，1s 轮询导入进度。
       const IMPORT_POLL_MS = 1000
       const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -106,6 +117,8 @@
           lines: '行',
           score: '评分',
           preview: '预览',
+          previewTabTitle: '语料查看',
+          previewEmpty: '点击文件列表中的语料，在这里查看内容。',
           close: '关闭',
           prevPage: '上一页',
           nextPage: '下一页',
@@ -381,6 +394,8 @@
           lines: 'lines',
           score: 'score',
           preview: 'Preview',
+          previewTabTitle: 'Corpus preview',
+          previewEmpty: 'Click a corpus file in the list to view it here.',
           close: 'Close',
           prevPage: 'Previous',
           nextPage: 'Next',
@@ -973,6 +988,7 @@
 
       // 主区域「在右侧栏编辑权限」的入口；apply 时按 sidebarRight 服务是否可用决定。
       let permissionsOpenTab = null
+      let previewOpenTab = null
 
       // ---- 样式：全部用 DSH 设计 token，跟随主题 ----
       const PAGE = { height: '100%', overflowY: 'auto', background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)' }
@@ -1929,14 +1945,13 @@
 
         const openPreview = (path, from) => {
           const start = Math.max(1, num(from) || 1)
-          setPreviewState({ loading: true, error: null, data: null, path })
-          postJson(API.read, { path, from: start, lines: PAGE_LINES }).then((body) => {
-            if (!mountedRef.current) return
-            setPreviewState({ loading: false, error: null, data: body, path })
-          }).catch((error) => {
-            if (!mountedRef.current) return
-            setPreviewState({ loading: false, error: errorText(error), data: null, path })
-          })
+          publishPreview({ path, from: start })
+          if (typeof previewOpenTab === 'function') {
+            previewOpenTab()
+          } else {
+            // 没有右侧栏能力时退回外部查看器，避免“点了没反应”。
+            postJson(API.openExternal, { path, mode: 'default' }).catch(() => {})
+          }
         }
 
         const closePreview = () => setPreviewState({ loading: false, error: null, data: null, path: null })
@@ -2321,10 +2336,96 @@
             }),
             h('div', { style: GRID },
               h('div', { style: COLUMN }, searchSection, resultsSection),
-              h('div', { style: COLUMN }, previewSection, collectionsSection, policySection),
+              h('div', { style: COLUMN }, collectionsSection, policySection),
             ),
             h('p', { style: FOOT }, t.foot),
           ),
+        )
+      }
+
+      /**
+       * 右栏「语料查看」面板：文件列表点击后通过模块级事件把请求推到这里。
+       */
+      function PreviewPanel() {
+        const t = copy()
+        const [request, setRequest] = React.useState(previewRequest)
+        const [state, setState] = React.useState({ loading: false, error: null, data: null })
+
+        const load = React.useCallback((target) => {
+          if (!target || typeof target.path !== 'string' || target.path === '') return
+          setState({ loading: true, error: null, data: null })
+          postJson(API.read, { path: target.path, from: Math.max(1, num(target.from) || 1), lines: PAGE_LINES })
+            .then((body) => setState({ loading: false, error: null, data: body }))
+            .catch((error) => setState({ loading: false, error: errorText(error), data: null }))
+        }, [])
+
+        React.useEffect(() => {
+          const subscriber = (next) => setRequest(next)
+          previewSubscribers.add(subscriber)
+          return () => { previewSubscribers.delete(subscriber) }
+        }, [])
+
+        React.useEffect(() => { load(request) }, [request, load])
+
+        const openExternal = (mode) => {
+          if (!request || typeof request.path !== 'string') return
+          postJson(API.openExternal, { path: request.path, mode }).catch((error) => {
+            setState((prev) => ({ ...prev, error: t.externalOpenFailed + errorText(error) }))
+          })
+        }
+
+        const go = (from) => {
+          if (!request) return
+          const next = { ...request, from: Math.max(1, num(from) || 1) }
+          setRequest(next)
+        }
+
+        if (!request) {
+          return h('section', { style: SECTION },
+            h('h2', { style: H2 }, t.previewTabTitle),
+            h('p', { style: SMALL }, t.previewEmpty))
+        }
+
+        const data = state.data
+        const from = num(data && data.from) || num(request.from) || 1
+        const to = num(data && data.to) || from
+        const total = num(data && data.totalLines) || 0
+        return h('section', { style: SECTION },
+          h('h2', { style: H2 }, t.previewTabTitle),
+          h('div', { style: { ...ROW, marginBottom: '8px' } },
+            h('span', { style: { ...SMALL, wordBreak: 'break-all', flex: '1 1 auto', minWidth: 0 } }, request.path),
+            data ? h('span', { style: CHIP }, t.pageInfo(from, to, total)) : null,
+          ),
+          h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' } },
+            h('div', { style: { display: 'flex', alignItems: 'center' } },
+              h('button', {
+                type: 'button',
+                style: { ...BTN, borderTopRightRadius: 0, borderBottomRightRadius: 0, paddingRight: '9px' },
+                title: t.externalOpen,
+                onClick: () => openExternal('default'),
+              }, '📂 ' + t.externalOpen),
+              h('button', {
+                type: 'button',
+                style: { ...BTN, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, paddingLeft: '7px', paddingRight: '7px' },
+                title: t.externalOpenChoose,
+                'aria-label': t.externalOpenChoose,
+                onClick: () => openExternal('choose'),
+              }, '▾'),
+            ),
+            h('button', {
+              type: 'button', style: BTN,
+              disabled: state.loading || !data || from <= 1,
+              onClick: () => go(from - PAGE_LINES),
+            }, t.prevPage),
+            h('button', {
+              type: 'button', style: BTN,
+              disabled: state.loading || !data || to >= total,
+              onClick: () => go(to + 1),
+            }, t.nextPage),
+          ),
+          state.loading ? h('p', { style: SMALL }, t.loading) : null,
+          state.error !== null ? h('p', { role: 'status', style: STATUS(false) }, t.readFailed + state.error) : null,
+          data ? h('pre', { style: { ...PRE, maxHeight: 'none' } }, numberedText(data)) : null,
         )
       }
 
@@ -3247,8 +3348,20 @@
           const withLocale = {}
           if (locale !== undefined && typeof locale.register === 'function') {
             ctx.effect(() => locale.register(NS, {
-              zh: { nav: COPY.zh.nav, permTitle: COPY.zh.permTitle, permDesc: COPY.zh.permDesc },
-              en: { nav: COPY.en.nav, permTitle: COPY.en.permTitle, permDesc: COPY.en.permDesc },
+              zh: {
+                nav: COPY.zh.nav,
+                permTitle: COPY.zh.permTitle,
+                permDesc: COPY.zh.permDesc,
+                previewTabTitle: COPY.zh.previewTabTitle,
+                previewEmpty: COPY.zh.previewEmpty,
+              },
+              en: {
+                nav: COPY.en.nav,
+                permTitle: COPY.en.permTitle,
+                permDesc: COPY.en.permDesc,
+                previewTabTitle: COPY.en.previewTabTitle,
+                previewEmpty: COPY.en.previewEmpty,
+              },
             }), 'dsh-corpus: dictionaries')
             try {
               const bound = typeof locale.bind === 'function' ? locale.bind(NS) : null
@@ -3294,6 +3407,10 @@
             && sidebarRight !== undefined && sidebarRight !== null && typeof sidebarRight.openTab === 'function'
             ? () => { sidebarRight.openTab('corpus-permissions'); return true }
             : null
+          previewOpenTab = tabs !== undefined && typeof tabs.register === 'function'
+            && sidebarRight !== undefined && sidebarRight !== null && typeof sidebarRight.openTab === 'function'
+            ? () => { sidebarRight.openTab(PREVIEW_TAB_ID); return true }
+            : null
 
           if (tabs !== undefined && typeof tabs.register === 'function') {
             ctx.effect(() => tabs.register({
@@ -3313,6 +3430,23 @@
               name: 'sidebar.right.pane.tab',
               key: PERMISSIONS_TAB_ID,
             }, PermissionsPanel)), 'dsh-corpus: permissions body')
+            ctx.effect(() => tabs.register({
+              id: PREVIEW_TAB_ID,
+              kind: PREVIEW_KIND,
+              priority: 'extension',
+              title: () => labelOf('previewTabTitle'),
+              guide: [{
+                id: PREVIEW_GUIDE_ID,
+                order: 56,
+                title: () => labelOf('previewTabTitle'),
+                description: () => labelOf('previewEmpty'),
+                icon: CorpusIcon,
+              }],
+            }), 'dsh-corpus: preview type')
+            ctx.effect(() => slots.inject('sidebar.right.pane.tab', () => slots.register({
+              name: 'sidebar.right.pane.tab',
+              key: PREVIEW_TAB_ID,
+            }, PreviewPanel)), 'dsh-corpus: preview body')
           }
         } catch (error) {
           try { console.error('[corpus] client apply failed:', error) } catch { /* 控制台不可用 */ }

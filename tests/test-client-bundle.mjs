@@ -544,11 +544,12 @@ async function zhBundleChecks() {
   const { ctx, dictionaryCalls, effectLabels, tabTypes, openedTabs } = makeCtx({ slots, lang: 'zh-CN' })
   exports.apply(ctx)
 
-  eq('slots.inject 调用三次（左栏/主页面/右栏 body）', slots.injected.join(','), 'sidebar.panellist,main,sidebar.right.pane.tab')
-  eq('三个注册点各注册一次', slots.registered.length, 3)
+  eq('slots.inject 调用四次（左栏/主页面/权限 body/预览 body）', slots.injected.join(','), 'sidebar.panellist,main,sidebar.right.pane.tab,sidebar.right.pane.tab')
+  eq('四个注册点各注册一次', slots.registered.length, 4)
   const navRegistration = slots.registered[0]
   const mainRegistration = slots.registered[1]
   const permissionsRegistration = slots.registered[2]
+  const previewRegistration = slots.registered[3]
   eq('sidebar 注册名', navRegistration.definition.name, 'sidebar.panellist')
   eq('sidebar id 是 corpus', navRegistration.definition.id, 'corpus')
   eq('sidebar order 是 46', navRegistration.definition.order, 46)
@@ -562,8 +563,12 @@ async function zhBundleChecks() {
   eq('右栏 body key 是 tab id', permissionsRegistration.definition.key, PERMISSIONS_TAB_ID)
   eq('右栏 body 注册包在 ctx.effect 里', permissionsRegistration.insideEffect, true)
   eq('右栏 body 是函数', typeof permissionsRegistration.component, 'function')
+  eq('预览 body 注册名', previewRegistration.definition.name, 'sidebar.right.pane.tab')
+  eq('预览 body key 是预览 tab id', previewRegistration.definition.key, 'dsh-plugin-corpus-preview')
+  eq('预览 body 注册包在 ctx.effect 里', previewRegistration.insideEffect, true)
+  eq('预览 body 是函数', typeof previewRegistration.component, 'function')
 
-  eq('右栏 tab 类型注册一次', tabTypes.length, 1)
+  eq('右栏 tab 类型注册两次', tabTypes.length, 2)
   const tabType = tabTypes[0]
   eq('右栏 type id', tabType.definition.id, PERMISSIONS_TAB_ID)
   eq('右栏 type kind', tabType.definition.kind, PERMISSIONS_KIND)
@@ -577,6 +582,13 @@ async function zhBundleChecks() {
   ok('guide 描述非空', typeof guide.description() === 'string' && guide.description().length > 0)
   const shield = guide.icon({ size: 18, active: false })
   eq('guide 图标是 svg', shield.type, 'svg')
+  const previewType = tabTypes[1]
+  eq('预览 type id', previewType.definition.id, 'dsh-plugin-corpus-preview')
+  eq('预览 type kind', previewType.definition.kind, 'corpus-preview')
+  eq('预览 type title zh', previewType.definition.title(), '语料查看')
+  const previewGuide = previewType.definition.guide && previewType.definition.guide[0]
+  eq('预览 guide 条目 id', previewGuide.id, 'preview')
+  eq('预览 guide 条目 order 是 56', previewGuide.order, 56)
 
   const icon = navRegistration.component
   const iconElement = icon({ size: 20, active: true })
@@ -591,8 +603,8 @@ async function zhBundleChecks() {
   eq('locale en permTitle', dictionaryCalls[0].dictionaries.en.permTitle, 'Corpus permissions')
   eq('注册项带 locale 命名空间', navRegistration.definition.locale, 'dsh-corpus')
   eq('main 注册项带 locale 命名空间', mainRegistration.definition.locale, 'dsh-corpus')
-  ok('注册被 ctx.effect 包裹（dictionaries/sidebar/page/permissions）',
-    effectLabels.length === 5 && effectLabels.every((label) => typeof label === 'string' && label.indexOf('dsh-corpus') === 0))
+  ok('注册被 ctx.effect 包裹（dictionaries/sidebar/page/权限/预览）',
+    effectLabels.length === 7 && effectLabels.every((label) => typeof label === 'string' && label.indexOf('dsh-corpus') === 0))
 
   // 整页首屏渲染：fake hooks 只取初始状态，不执行 effect。
   const page = mainRegistration.component
@@ -632,7 +644,7 @@ async function zhBundleChecks() {
     noThrow('点击「导入语料」按钮不抛错', () => importToggle.props.onClick())
     ok('导入按钮不打开右栏 tab（只在页面内展开）', openedTabs.length === 1)
   }
-  eq('右栏仍只有「语料权限」一个 tab 类型', tabTypes.length, 1)
+  eq('右栏有「语料权限 / 语料查看」两个 tab 类型', tabTypes.length, 2)
 
   // 跑挂载 effect：应当 GET /overview + /status。
   const cleanups = harness.effects.map((effect) => effect())
