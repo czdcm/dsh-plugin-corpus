@@ -171,7 +171,7 @@ export function createIngestAgent({ ctx, config, log }) {
         if (modalities !== null && !modalities.some((item) => String(item).toLowerCase().includes('image'))) {
           return {
             available: false,
-            reason: `模型 ${options.provider}/${options.model} 不支持图片输入`,
+            reason: `DSH 模型 ${options.provider}/${options.model} 未声明图片输入能力（模型选项里未启用“图片”）`,
             provider: options.provider,
             model: options.model,
             inputModalities: modalities,
