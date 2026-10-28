@@ -39,7 +39,6 @@
       const PANEL_ID = 'corpus'
       const NS = 'dsh-corpus'
       const PAGE_LINES = 60
-      const APP_ICON_VERSION = String(Date.now())
       const POLL_MS = 800
       const PERMISSIONS_TAB_ID = 'dsh-plugin-corpus-permissions'
       const PERMISSIONS_KIND = 'corpus-permissions'
@@ -82,7 +81,6 @@
         settingsOpen: '/api/dsh-plugin-corpus/settings/open',
         openExternal: '/api/dsh-plugin-corpus/open-external',
         openers: '/api/dsh-plugin-corpus/openers',
-        appIcon: '/api/dsh-plugin-corpus/app-icon',
       }
 
       const COPY = {
@@ -1387,38 +1385,21 @@
         )
       }
 
+      /** 文件列表显示名：标题 + 扩展名（已带扩展名则不重复）。 */
+      function fileNameOf(item) {
+        const title = String(item && (item.title || item.path) || '')
+        const format = String(item && item.format || '').trim().toLowerCase()
+        const suffix = format === '' ? extensionOf(item && item.path) : (format.charAt(0) === '.' ? format : '.' + format)
+        if (title === '' || suffix === '') return title
+        return title.toLowerCase().endsWith(suffix.toLowerCase()) ? title : title + suffix
+      }
+
       function FileTypeIcon(props) {
         const item = props.item
         const format = String(item.format || '').toLowerCase()
-        const [broken, setBroken] = React.useState(false)
-        const [iconVersion, setIconVersion] = React.useState(APP_ICON_VERSION)
-        React.useEffect(() => {
-          const refresh = () => {
-            setBroken(false)
-            setIconVersion(String(Date.now()))
-          }
-          let target = null
-          try { target = window } catch { target = null }
-          if (target && typeof target.addEventListener === 'function') {
-            target.addEventListener('dsh-corpus-icons-changed', refresh)
-            return () => target.removeEventListener('dsh-corpus-icons-changed', refresh)
-          }
-          return undefined
-        }, [])
         const known = FILE_TYPE_ICONS[format] || null
         const label = known ? known.label : (format === '' ? 'TXT' : format.slice(0, 4).toUpperCase())
         const color = known ? known.color : '#607d8b'
-        if (format !== '' && !broken) {
-          return h('img', {
-            src: API.appIcon + '?ext=' + encodeURIComponent(format) + '&v=' + encodeURIComponent(iconVersion),
-            alt: label,
-            title: label,
-            loading: 'lazy',
-            decoding: 'async',
-            onError: () => setBroken(true),
-            style: { width: '26px', height: '26px', objectFit: 'contain', display: 'block' },
-          })
-        }
         return h('div', {
           title: label,
           style: { position: 'relative', width: '26px', height: '28px', flex: '0 0 26px' },
@@ -1662,7 +1643,7 @@
         },
           h('span', { style: { display: 'flex', alignItems: 'center', paddingLeft: (18 + Math.max(0, depth) * 18) + 'px', boxSizing: 'border-box' } }, h(FileTypeIcon, { item })),
           h('span', { style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 } },
-            item.title,
+            fileNameOf(item),
             item.aiStructured ? h('span', { style: { ...CHIP, marginLeft: '6px', fontSize: '10px', padding: '0 5px' } }, t.galleryAi) : null,
           ),
           h('span', { style: { color: 'var(--dsw-alias-label-secondary)', textTransform: 'uppercase' } }, String(item.format || 'text')),
