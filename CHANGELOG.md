@@ -2,13 +2,13 @@
 
 本文件记录 `dsh-plugin-corpus` 的对外版本变化。
 
-## 未发布 — 文档目录索引
+## 1.2.0 — 2026-10-28
 
 - 导入（ingest / structure / corpus_import）时生成文档结构目录：章节、小节、起止行号、摘要、关键词。
 - 新增 `corpus_catalog`（文档卡片/行数/章节数）与 `corpus_outline`（按路径查看/按需生成目录）两个工具。
 - sessionPrompt 改为注入文档卡片与目录约定，模型在会话开始即可知道有哪些文档、多少行、多少章，并知道用 `corpus_outline` 定位第几行。
 - 目录 JSON 存于 `.corpus/outlines/`，不进入检索分块；兼容 processed 旁的旧版 outline 文件。
-- 工具 11 → 13；HTTP 路由仍为 18。
+- 工具 13 个；HTTP 路由仍为 18。
 
 ## 1.1.0 — 2026-10-28
 
