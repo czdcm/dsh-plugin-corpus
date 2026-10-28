@@ -30,13 +30,13 @@
 
 - **许可证：GNU GPL version 2 or later**，全文见 `plugin/vendor/pdftotext/LICENSE`，说明见 `plugin/vendor/pdftotext/NOTICE.txt`。
 - 上游：https://poppler.freedesktop.org/
-- 再分发该二进制需要满足 GPL 要求（许可证文本、对应源码可获取、NOTICE 等）。默认完整包包含它，并附 `SOURCE-OFFER.txt`；`-WithoutPdftotext` 包不包含这些二进制。
+- 再分发该二进制需要满足 GPL 要求（许可证文本、对应源码可获取、NOTICE 等）。完整包包含它，并附 `SOURCE-OFFER.txt`。
 - 不含它时，PDF 文字层使用纯 JS 解析，扫描版使用 Windows OCR 兜底。
 
 ### 3.3 系统能力
 
 - **Windows OCR**：通过 PowerShell 5.1 调用 `Windows.Media.Ocr`、`Windows.Data.Pdf` 等系统 API，不再分发微软二进制。
-- **MinGW 运行时 DLL**：与 `pdftotext.exe` 一起随 Poppler 包分发，受其运行时例外和 GPL 义务约束；`-WithoutPdftotext` 包不包含。
+- **MinGW 运行时 DLL**：与 `pdftotext.exe` 一起随 Poppler 包分发，受其运行时例外和 GPL 义务约束。
 - **测试夹具和 Markdown 文档**：由本项目创建，不包含第三方语料。
 
 ## 4. 发布包策略
@@ -44,8 +44,9 @@
 | 产物 | 内容 | 第三方二进制 |
 |---|---|---|
 | 默认 `*-plugin.zip` | 插件代码 + 完整 vendor + 许可证/说明 | OfficeCLI（Apache-2.0）+ pdftotext（GPL-2.0-or-later） |
-| 可选 `*-plugin-without-pdftotext.zip` | 插件代码 + OfficeCLI，无 pdftotext | 仅 OfficeCLI（Apache-2.0） |
 | `*-handoff.zip`（如果本地生成） | 完整开发交接包 | 本地 vendor；公开再分发前必须满足 GPL 义务 |
+
+官方 Release 只发布完整包。`tools/package-plugin.ps1 -WithoutPdftotext` 仅保留为本地可选构建，不作为官方 Release 资产上传。
 
 如果发布包含 `pdftotext` 的构建，请保留许可证、NOTICE、源码获取说明；默认构建已经随包附带。Poppler 源码可从上游获取，`SOURCE-OFFER.txt` 中也有说明。
 

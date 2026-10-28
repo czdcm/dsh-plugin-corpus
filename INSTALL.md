@@ -33,7 +33,16 @@ vendor 二进制已经包含在完整包里，不需要单独安装 OfficeCLI �
 
 GitHub 源码仓库不包含第三方二进制（`officecli.exe` / `pdftotext.exe`）。`git clone` 适合看代码和跑测试，但默认没有完整 Office/PDF 提取能力。完整安装请使用 Release 包；源码开发前先把 vendor 文件放回 `plugin/vendor/officecli/` 和 `plugin/vendor/pdftotext/`，或接受纯 JS/Windows OCR 降级。
 
-## 3. 安装 / 升级
+## 3. 从 npm / 插件市场安装
+
+```powershell
+dsh plugin add dsh-plugin-corpus
+```
+
+然后完全重启 DSH。npm 包：<https://www.npmjs.com/package/dsh-plugin-corpus>。
+如果使用 GitHub Release，继续下面的手动安装步骤。
+
+## 4. 安装 / 升级
 
 > 替换插件前必须**完全退出 DSH**，关浏览器标签不算。
 
@@ -121,7 +130,7 @@ pnpm install
 
 面板没出现时，先确认 DSH 已完全重启、profile 两处都已注册、`node_modules/dsh-plugin-corpus` 链接正确。
 
-## 4. 升级
+## 5. 升级
 
 1. 完全退出 DSH；
 2. 备份当前 `%USERPROFILE%\.dsh\plugins\dsh-plugin-corpus`；
@@ -131,7 +140,7 @@ pnpm install
 
 语料、权限和索引不在插件目录内，升级不会丢数据。
 
-## 5. 卸载
+## 6. 卸载
 
 1. 完全退出 DSH；
 2. 从 profile 的 `dependencies` 和 `dsh.profile.bundles` 删除 `dsh-plugin-corpus`；
@@ -140,11 +149,10 @@ pnpm install
 
 插件被卸载，但语料仍保留在 `%USERPROFILE%\.dsh\corpus`。要彻底删除数据，再单独删除该目录。
 
-## 6. 包版本
+## 7. 包版本
 
 | 包 | 内容 |
 |---|---|
-| `dsh-plugin-corpus-v1.3.1-plugin.zip` | 完整包：OfficeCLI + pdftotext |
-| `dsh-plugin-corpus-v1.3.1-plugin-without-pdftotext.zip` | 仅 OfficeCLI；PDF 文字回退纯 JS/Windows OCR |
+| `dsh-plugin-corpus-v1.3.1-plugin.zip` | 完整包：OfficeCLI + pdftotext + 许可证/源码说明 |
 
-两个包使用同一份脱敏源码，区别仅在于是否包含 GPL 的 pdftotext 二进制及其许可证。
+官方 Release 只发布完整包。源码中仍可用 `tools/package-plugin.ps1 -WithoutPdftotext` 做本地可选构建，但不再作为官方 Release 资产上传。

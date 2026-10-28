@@ -30,7 +30,7 @@
 ┌──────▼──────────────────────────────────────────────────┐
 │ 语料根（默认 ~/.dsh/corpus）                              │
 │  <collection>/...processed/*.md + .meta.json             │
-│  .corpus/index/*.sqlite、config、thumbs、trash            │
+│  .corpus/index/*.sqlite、config、trash                    │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -44,12 +44,12 @@
 
 | 语言 | 用在哪 | 大致规模 | 学习优先级 |
 |---|---|---|---|
-| **JavaScript（ESM，Node.js）** | 宿主全部逻辑、客户端 UI | ~7,900 行（`plugin/lib/*.js`） | ★★★★★ |
-| **JavaScript（.mjs 测试）** | 14 个自包含验收脚本 | ~4,400 行 | ★★★★ |
+| **JavaScript（ESM，Node.js）** | 宿主全部逻辑、客户端 UI | 约 9,000 行（`plugin/lib/*.js`，以实际文件为准） | ★★★★★ |
+| **JavaScript（.mjs 测试）** | 15 个自包含验收脚本 | 以实际文件为准 | ★★★★ |
 | **PowerShell 5.1** | Windows OCR、测试/部署/打包脚本 | ~340 行 | ★★（只改 Windows 能力时） |
 | **SQL** | SQLite 建表 / 查询 / 插入 | 嵌在 `engine.js` | ★★★ |
 | **JSON / YAML** | 插件清单、配置、策略、state | 少量 | ★★ |
-| **Markdown** | 语料内容、文档 | ~1,700 行（项目文档） | ★ |
+| **Markdown** | 语料内容、文档 | 项目文档 | ★ |
 | HTML/CSS | 没有独立文件；HTML 在 `extract.js` 里解析，UI 用 inline style | — | ★ |
 
 > 没有 TypeScript、没有 Webpack/Vite 构建步骤、没有前端测试框架。  
@@ -78,7 +78,7 @@
 - 部署：`tools/deploy.ps1` 把 `plugin/`（含 `vendor/`）复制到 `~/.dsh/plugins/dsh-plugin-corpus`。
 - 打包：
   - `tools/package-plugin.ps1` → 可安装插件 zip（默认含完整 vendor 与许可证）
-  - `tools/package-plugin.ps1 -WithoutPdftotext` → 不含 GPL pdftotext 二进制的版本
+  - `tools/package-plugin.ps1 -WithoutPdftotext` → 本地可选的纯 JS/OCR 构建（官方 Release 只发布完整包）
 
 ---
 
@@ -92,6 +92,7 @@ dsh-plugin-corpus/
 │  └─ lib/
 │     ├─ index.js           ★ 宿主入口：Config、工具、提示词、webServer、dispose
 │     ├─ panel.js           ★ HTTP API：overview/files/search/read/reindex/status/policy/access/import/settings/delete/gallery
+│     ├─ outline.js         章节/小节/起止行号目录生成与持久化
 │     ├─ engine.js          ★ 文件扫描、SQLite 索引、检索、按行读、集合统计
 │     ├─ jobs.js            ★ 重建任务管理（worker_threads + 锁）
 │     ├─ reindex-worker.js  worker 入口：调用 engine.reindex 并通过 postMessage 报进度
@@ -133,7 +134,7 @@ DSH 读取 profile → cordis.patch.yml 插入 corpus
      ├─ createIngestAgent({ctx, config})
      ├─ createIngestManager({root,...})
      ├─ createStructureService({...})
-     ├─ ctx.tools.register(...) × 11
+     ├─ ctx.tools.register(...) × 13
      ├─ ctx.inject(['systemPrompt'], ...)
      └─ ctx.inject(['webServer'], ...) → createPanelRoutes(...)
 ```
@@ -260,8 +261,8 @@ POST /delete {path|collection}
 │     └─ .meta.json
 ├─ .corpus/
 │  ├─ index/<collection>.sqlite
+│  ├─ outlines/<hash>.json
 │  ├─ config.json
-│  ├─ thumbs/<sha1>.img/.json
 │  ├─ import-tmp/<jobId>/
 │  └─ trash/<时间>/...
 └─ ...
@@ -360,7 +361,7 @@ meta(key TEXT PRIMARY KEY, value TEXT)
 ## 9. 开发/部署/打包命令
 
 ```powershell
-cd C:\Users\<you>\Desktop\DSH\DeepSeek Harness\dsh-plugin-corpus
+cd <repo>
 
 # 全部本地验收
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\test-all.ps1
@@ -372,7 +373,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 # 打包：可安装插件 zip（默认含完整 vendor 与许可证）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1
 
-# 打包：不含 GPL pdftotext 二进制的版本
+# 可选：本地构建不含 GPL pdftotext 的包（官方 Release 只发布完整包）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1 -WithoutPdftotext
 ```
 

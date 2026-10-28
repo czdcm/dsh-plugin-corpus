@@ -35,6 +35,14 @@ dsh-plugin-corpus 是 **DeepSeek Harness (DSH)** 的文件语料库插件。
 
 可以在面板的 **语料库根目录** 设置中修改或迁移。
 
+### 从 npm / 插件市场安装
+
+```powershell
+dsh plugin add dsh-plugin-corpus
+```
+
+安装后完全重启 DSH。npm 包：<https://www.npmjs.com/package/dsh-plugin-corpus>。
+
 ### 从源码部署
 
 ```powershell
@@ -53,7 +61,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 ### 左侧栏「语料库」
 
 - **导入语料**：浏览器文件可多选；本机路径可多行输入（每行一个文件/目录），同一批全部导入同一个集合；集合留空会自动创建 `import-日期-时间`；集合名支持中文、空格和常用符号（≤64 字符，不能含 `/ \ : * ? " < > |`）；
-- **公式**：HTML MathML、Word/PowerPoint OMML、Unicode 数学符号和已有 LaTeX 会统一整理为 `$...$` / `$$...$$`；PDF 公式行也会保留为 LaTeX 公式块（插图不要求识别）；
+- **公式与图形**：HTML MathML、Word/PowerPoint OMML、Unicode 数学符号和已有 LaTeX 会统一整理为 `$...$` / `$$...$$`；Office/PPT 会读取对象树、连接线、图表并渲染版式缩略图，提示词要求解释图形逻辑，不再以“图示略”跳过；
 - **检索**：按关键词搜索已索引的 `processed/` 内容；结果只用于定位，不直接打开预览；
 - **查看**：文件列表每行的「用外部软件打开」主按钮优先读取 Windows 默认关联直接打开；没有关联时打开系统软件选择器，由 Windows 记录本次选择；`▾` 可再次打开系统软件选择器；文件列表的图标/名称/类型跟随处理后语料类型，按钮只显示默认应用图标，右侧箭头保留系统选择器；不再内置右侧栏预览；
 - **语料文件**：按集合分组的资源管理器式列表；
@@ -105,7 +113,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
    ├─ index/<collection>.sqlite
    ├─ config.json
    ├─ outlines/<hash>.json  文档结构目录（不进入检索分块）
-   ├─ thumbs/
    ├─ import-tmp/
    └─ trash/<时间>/     软删除内容，可手动恢复
 ```
@@ -126,16 +133,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 
 | 格式 | 提取方式 |
 |---|---|
-| `.md` `.markdown` `.mdx` `.txt` `.rst` `.text` | 直接读取文本 |
+| `.md` `.markdown` `.txt` `.text` | 直接读取文本 |
 | `.html` `.htm` | 去标签，保留标题/段落/列表 |
 | `.csv` | 文本化表格 |
 | `.pdf` | 优先随包 `pdftotext`；无文字层时用纯 JS 解析；扫描版走 Windows OCR |
 | `.docx` `.xlsx` `.pptx` | 优先 OfficeCLI；失败/缺失时回退纯 JS ZIP+XML 解析 |
-| 图片（PNG/JPEG/WebP/GIF/BMP/TIFF） | 有可用视觉模型时结构化；否则保存占位 Markdown |
+| `.png` `.jpg` `.jpeg` `.webp` `.gif` `.bmp` `.tif` `.tiff` | 有可用视觉模型时结构化；否则使用 Windows OCR/占位 Markdown |
 
 面板里的 **Vision** 不可用时会显示具体原因，通常是当前默认模型不支持图片输入。可以在 DSH profile 的插件配置中设置 `ingestVisionProvider` / `ingestVisionModel` 指向可接收图片的模型；未配置视觉模型时图片退回内置 Windows OCR。
 
-PDF/Office 的随包工具是可选增强；缺失时插件仍能用纯 JS/系统能力降级运行。
+完整包随附 PDF/Office 工具；缺失时插件仍能用纯 JS/系统能力降级运行。
 OfficeCLI 是 Apache-2.0；Poppler `pdftotext` 是 GPL-2.0-or-later，详见仓库根目录的
 `THIRD_PARTY_NOTICES.md`。
 
@@ -191,6 +198,7 @@ OfficeCLI 是 Apache-2.0；Poppler `pdftotext` 是 GPL-2.0-or-later，详见仓�
 | `corpusRoot` | 空 | 覆盖语料根；空 = `~/.dsh/corpus` |
 | `promptOrder` | `9000` | 语料提示词段在 system prompt 中的顺序 |
 | `maxPromptFiles` | `12` | 提示词里最多列多少个文件标题 |
+| `maxPromptChars` | `8000` | 提示词目录文本的最大字符数 |
 | `ingestProvider` / `ingestModel` | 空 | 内置小代理使用的模型覆盖 |
 | `ingestVisionProvider` / `ingestVisionModel` | 空 | 图片识别使用的视觉模型；留空跟随默认模型 |
 | `ingestMaxChars` | `24000` | 单次 ingest 的材料上限 |
@@ -214,7 +222,6 @@ GET  /overview          GET  /files             POST /search
 POST /read              POST /reindex           GET  /status
 GET  /access            GET  /import/targets    POST /import
 GET  /import/status     POST /delete            GET  /gallery
-GET  /settings          POST /settings/root     POST /settings/open
 GET  /settings          POST /settings/root     POST /settings/open
 GET  /app-icon
 POST /open-external
@@ -248,7 +255,7 @@ Invoke-RestMethod 'http://127.0.0.1:<port>/api/dsh-plugin-corpus/gallery?limit=1
 - 面板是本地管理界面，没有面向公网的认证；不要反向代理到公网；
 - `corpus_read` 只读 `processed/`；
 - 删除是软删除，内容移到 `.corpus/trash/`；
-- 文档导入有单文件大小限制（默认 25 MiB）和格式白名单；
+- 浏览器上传单文件默认 25 MiB；本机路径单文件默认 256 MiB；格式白名单见 `/import/targets`；
 - 扫描版 PDF 的 OCR 依赖 Windows OCR，速度比文字层提取慢；
 - 访问策略文件、本机 ACL 配置不要提交到 Git。
 
@@ -266,7 +273,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 # 打完整插件包
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1
 
-# 打不含 GPL pdftotext 的插件包
+# 可选：本地构建不含 GPL pdftotext 的包（官方 Release 只发布完整包）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1 -WithoutPdftotext
 ```
 

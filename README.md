@@ -22,7 +22,7 @@
 - **主会话接口**：把克隆的仓库或当前会话总结成语料。
 - **Web 面板**：左侧栏语料库页面（导入、检索、文件列表、集合折叠、删除、根目录设置）；检索只负责定位，查看直接用外部软件；文件列表每行提供外部打开按钮。
 - **外部查看**：每行「用外部软件打开」主按钮优先读取 Windows 默认关联（含最近选择）直接打开；没有关联时打开系统软件选择器，由 Windows 记录本次选择；点 `▾` 可再次打开系统软件选择器。文件列表的图标/名称/类型跟随处理后语料类型；按钮只显示默认应用图标，不显示文字；右侧箭头保留系统选择器。
-- **Windows 辅助能力**：内置 OCR，可选 OfficeCLI/pdftotext。
+- **Windows 辅助能力**：内置 OCR；完整包随附 OfficeCLI/pdftotext，缺失时自动降级。
 
 ## 环境要求
 
@@ -48,6 +48,17 @@
 默认语料根为 `%USERPROFILE%\.dsh\corpus`，可在面板「语料库根目录」中修改或迁移。
 
 详细步骤（含 profile 注册、升级、卸载）见 [`INSTALL.md`](INSTALL.md)。
+
+### 从 npm / 插件市场安装
+
+已发布到 npm，可直接安装：
+
+```powershell
+dsh plugin add dsh-plugin-corpus
+```
+
+安装后完全重启 DSH。npm 包：<https://www.npmjs.com/package/dsh-plugin-corpus>。
+插件市场收录后，也会在 Discover 中出现；新版本需要用户在市场中确认升级。
 
 ### 从源码安装
 
@@ -83,7 +94,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
    ├─ index/<集合>.sqlite
    ├─ config.json
    ├─ outlines/<hash>.json  文档结构目录（不进入检索分块）
-   ├─ thumbs/
    ├─ import-tmp/
    └─ trash/            软删除内容，可手动恢复
 ```
@@ -140,6 +150,7 @@ GET/POST /policy
 | `corpusRoot` | 空 | 覆盖语料根；空表示 `~/.dsh/corpus` |
 | `promptOrder` | `9000` | 语料提示词段顺序 |
 | `maxPromptFiles` | `12` | 提示词最多列出的文件标题数 |
+| `maxPromptChars` | `8000` | 提示词目录文本的最大字符数 |
 | `ingestProvider` / `ingestModel` | 空 | 内置小代理模型覆盖 |
 | `ingestVisionProvider` / `ingestVisionModel` | 空 | 图片识别使用的视觉模型；留空跟随默认模型 |
 | `ingestMaxChars` | `24000` | 单次摄取材料上限 |
@@ -167,7 +178,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 # 打完整插件包（默认写入项目 releases/v<版本>/）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1
 
-# 打不含 GPL pdftotext 的版本
+# 可选：本地构建不含 GPL pdftotext 的包（官方 Release 只发布完整包）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1 -WithoutPdftotext
 ```
 
@@ -199,4 +210,4 @@ LICENSE
 
 本项目源码采用 **GPL-2.0-or-later**。
 
-OfficeCLI 为 Apache-2.0；Poppler/pdftotext 为 GPL-2.0-or-later。完整插件包包含两者及许可证和源码说明；`WithoutPdftotext` 版本不包含 pdftotext 二进制。详见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+OfficeCLI 为 Apache-2.0；Poppler/pdftotext 为 GPL-2.0-or-later。官方 Release 只发布包含两者的完整包，并附许可证和源码说明；源码中仍可用 `-WithoutPdftotext` 做本地可选构建。详见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
