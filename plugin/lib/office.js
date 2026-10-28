@@ -263,6 +263,43 @@ export function extractOffice(buffer, ext) {
   throw new Error(`不支持的 Office 格式：${format}`)
 }
 
+/** 抽取 xlsx 单元格公式（含 Sheet!Cell 与原始公式文本）。 */
+export function extractXlsxFormulas(buffer) {
+  const entries = readZip(buffer)
+  const workbook = entries.get('xl/workbook.xml')
+  if (!workbook) return []
+  const workbookXml = workbook.toString('utf8')
+  const rels = relsMap(entries, 'xl/_rels/workbook.xml.rels')
+  const sheets = []
+  const sheetRegexp = /<sheet\b[^>]*\/>/g
+  let sheetMatch
+  while ((sheetMatch = sheetRegexp.exec(workbookXml)) !== null) {
+    const tag = sheetMatch[0]
+    const name = xmlUnescape((tag.match(/\bname="([^"]*)"/) || [])[1] || 'Sheet')
+    const rid = (tag.match(/\br:id="([^"]+)"/) || [])[1]
+    const target = rid ? rels.get(rid) : null
+    if (target) sheets.push({ name, target: normalizeSheetTarget(target) })
+  }
+  const formulas = []
+  for (const sheet of sheets) {
+    const entry = entries.get(sheet.target)
+    if (!entry) continue
+    const xml = entry.toString('utf8')
+    const cellRegexp = /<c\b([^>]*)>([\s\S]*?)<\/c>/g
+    let cellMatch
+    while ((cellMatch = cellRegexp.exec(xml)) !== null) {
+      const attrs = cellMatch[1]
+      const ref = (attrs.match(/\br="([^"]+)"/) || [])[1]
+      if (!ref) continue
+      const formula = cellMatch[2].match(/<f\b[^>]*>([\s\S]*?)<\/f>/)
+      if (!formula) continue
+      const value = xmlUnescape(formula[1]).trim()
+      if (value !== '') formulas.push(`${sheet.name}!${ref}: =${value}`)
+    }
+  }
+  return formulas
+}
+
 /** 单独抽取 Office 内嵌公式（docx OMML / pptx 中嵌入的 OMML）。 */
 export function extractOfficeFormulas(buffer, ext) {
   const format = String(ext || '').toLowerCase().replace(/^\./, '')

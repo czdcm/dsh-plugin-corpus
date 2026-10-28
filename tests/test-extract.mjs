@@ -23,7 +23,7 @@ import os from 'node:os'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import { SUPPORTED_EXTENSIONS, bundledOfficecli, extractDocument, extractorAvailability, htmlToText } from '../plugin/lib/extract.js'
-import { extractOffice } from '../plugin/lib/office.js'
+import { extractOffice, extractXlsxFormulas } from '../plugin/lib/office.js'
 import { extractPdfText, ocrAvailable, pdfExtractorAvailability } from '../plugin/lib/pdf.js'
 import { readZip } from '../plugin/lib/zip.js'
 
@@ -193,7 +193,7 @@ try {
     a('xl/worksheets/sheet1.xml', `<?xml version="1.0"?><worksheet><sheetData>
       <row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>
       <row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2"><v>42</v></c></row>
-      <row r="3"><c r="A3" t="inlineStr"><is><t>Inline</t></is></c><c r="B3"><v>7</v></c></row>
+      <row r="3"><c r="A3" t="inlineStr"><is><t>Inline</t></is></c><c r="B3"><v>7</v></c><c r="C3"><f>SUM(B2:B3)</f><v>49</v></c></row>
     </sheetData></worksheet>`),
   ])
   const xlsx = extractOffice(xlsxBuffer, '.xlsx')
@@ -202,7 +202,9 @@ try {
   assert(xlsx.text.includes('Name | Alice') && xlsx.text.includes('Score | 42'), 'xlsx sharedStrings + 数字单元格')
   assert(xlsx.text.includes('Inline | 7'), 'xlsx 内联字符串单元格')
   assert(xlsx.meta && Array.isArray(xlsx.meta.sheets) && xlsx.meta.sheets.join(',') === 'Data', 'xlsx meta.sheets')
-  ok('office.js xlsx：workbook rels + sharedStrings + 数字 / inlineStr 单元格')
+  const xlsxFormulas = extractXlsxFormulas(xlsxBuffer)
+  assert(xlsxFormulas.includes('Data!C3: =SUM(B2:B3)'), 'xlsx 公式抽取：' + JSON.stringify(xlsxFormulas))
+  ok('office.js xlsx：workbook rels + sharedStrings + 数字 / inlineStr 单元格 + 公式')
 
   const pptxBuffer = makeZip([
     a('ppt/presentation.xml', '<?xml version="1.0"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId id="256" r:id="rId2"/><p:sldId id="257" r:id="rId3"/></p:sldIdLst></p:presentation>'),

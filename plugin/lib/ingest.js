@@ -10,8 +10,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { SUPPORTED_EXTENSIONS, extractDocument, runWindowsOcr } from './extract.js'
-import { extractFormulaLines, normalizeLatex } from './formulas.js'
+import { extractFormulaLines, latexifyFormulaLines, normalizeLatex } from './formulas.js'
 import { collectionNameError, isValidCollectionName } from './collection-name.js'
+import { OFFICE_SYSTEM_PROMPT } from './ingest-agent.js'
 import { writeOutline } from './outline.js'
 
 const SUPPORTED = new Set(SUPPORTED_EXTENSIONS)
@@ -278,6 +279,9 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
         let aiStructured = false
         if (job.ai && agent && typeof agent.available === 'function' && agent.available()) {
           job.current = { source: display, stage: 'agent', index: index + 1, total: all.length }
+          const isOffice = ['docx', 'xlsx', 'pptx'].includes(format)
+          const officeVisuals = extracted.meta && Array.isArray(extracted.meta.officeVisuals) ? extracted.meta.officeVisuals : []
+          const metaForAgent = { title, source, format, collection: job.collection, warnings }
           try {
             if (extracted.kind === 'image') {
               const canSeeImages = typeof agent.supportsImages === 'function' ? await agent.supportsImages() : false
@@ -285,18 +289,45 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
                 const imageData = await fs.promises.readFile(file)
                 body = await agent.structureImages({
                   images: [{ data: new Uint8Array(imageData), mediaType: extracted.mediaType || 'image/png', name: source }],
-                  meta: { title, source, format, collection: job.collection, warnings },
+                  meta: metaForAgent,
                 })
               }
-            } else {
+            } else if (isOffice && officeVisuals.length > 0 && typeof agent.supportsImages === 'function' && await agent.supportsImages()) {
+              body = await agent.structureImages({
+                images: officeVisuals,
+                text,
+                meta: metaForAgent,
+                system: OFFICE_SYSTEM_PROMPT,
+                maxChars: 90000,
+                maxTokens: 8000,
+              })
+            } else if (isOffice) {
               body = await agent.structure({
                 text,
-                meta: { title, source, format, collection: job.collection, warnings },
+                meta: metaForAgent,
+                system: OFFICE_SYSTEM_PROMPT,
+                maxChars: 90000,
+                maxTokens: 8000,
               })
+            } else {
+              body = await agent.structure({ text, meta: metaForAgent })
             }
             if (body.trim() !== '') aiStructured = true
           } catch (error) {
             warnings.push(`小代理结构化失败，已回退：${error instanceof Error ? error.message : String(error)}`)
+            if (isOffice && body.trim() === '' && typeof agent.structure === 'function') {
+              try {
+                body = await agent.structure({
+                  text,
+                  meta: metaForAgent,
+                  system: OFFICE_SYSTEM_PROMPT,
+                  maxChars: 90000,
+                  maxTokens: 8000,
+                })
+              } catch (fallbackError) {
+                warnings.push(`Office 纯文本结构化也失败：${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`)
+              }
+            }
           }
         }
         // 图片：视觉不可用/失败时，用插件内置的 Windows OCR 取文字。
@@ -305,7 +336,7 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
           try {
             const ocrText = await runWindowsOcr(file, 'image')
             if (String(ocrText || '').trim() !== '') {
-              text = ocrText
+              text = latexifyFormulaLines(normalizeLatex(ocrText))
               warnings.push('图片已用插件内置的 Windows OCR 提取文字')
             }
           } catch (error) {

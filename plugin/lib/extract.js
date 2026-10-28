@@ -12,7 +12,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { extractOffice, extractOfficeFormulas } from './office.js'
+import { extractOffice, extractOfficeFormulas, extractXlsxFormulas } from './office.js'
 import { extractPdfText, ocrAvailable, pdfExtractorAvailability, runBundledPdftotext, runWindowsOcr } from './pdf.js'
 import { extractFormulaLines, latexifyFormulaLines, mathmlToLatex, normalizeLatex } from './formulas.js'
 
@@ -125,37 +125,202 @@ export function bundledOfficecli() {
   try { return fs.statSync(candidate).isFile() ? candidate : null } catch { return null }
 }
 
-function runOfficecli(file, timeoutMs = 120000) {
+function parseCliJson(stdout) {
+  const text = String(stdout || '').replace(/^\uFEFF/, '').trim()
+  if (text === '') return null
+  try { return JSON.parse(text) } catch { return null }
+}
+
+function runOfficeCliCommand(executable, args, env, timeoutMs) {
   return new Promise((resolve, reject) => {
-    const executable = bundledOfficecli()
-    if (executable === null) { reject(new Error('插件内没有 officecli')); return }
-    execFile(executable, ['view', file, 'text', '--json'], {
+    execFile(executable, args, {
       encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
+      maxBuffer: 96 * 1024 * 1024,
       timeout: timeoutMs,
       windowsHide: true,
+      env,
     }, (error, stdout) => {
-      const done = (result, failure) => {
-        // 等 close 真正结束再返回，避免调用方删除临时目录时被 resident 锁住。
-        execFile(executable, ['close', file], { windowsHide: true, timeout: 30000 }, () => {
-          if (failure) reject(failure)
-          else resolve(result)
-        })
-      }
-      if (error) { done(null, error); return }
-      try {
-        const parsed = JSON.parse(String(stdout || '').trim())
-        const elements = parsed && parsed.data && Array.isArray(parsed.data.elements) ? parsed.data.elements : []
-        const text = elements
-          .map((element) => (element && typeof element.text === 'string' ? element.text.trim() : ''))
-          .filter(Boolean)
-          .join('\n')
-        done({ text, title: null }, null)
-      } catch (parseError) {
-        done(null, parseError)
-      }
+      if (error) { reject(error); return }
+      resolve(parseCliJson(stdout))
     })
   })
+}
+
+function annotatedSlides(content) {
+  const result = new Map()
+  const text = String(content || '')
+  const regexp = /\[\/slide\[(\d+)\]\]([\s\S]*?)(?=\[\/slide\[\d+\]\]|$)/g
+  let match
+  while ((match = regexp.exec(text)) !== null) {
+    const index = Number(match[1])
+    const lines = match[2].split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+    result.set(index, lines)
+  }
+  return result
+}
+
+function cliTextOf(data, ext) {
+  if (!data) return ''
+  if (ext === '.pptx') {
+    const slides = data.data && Array.isArray(data.data.slides) ? data.data.slides : []
+    return slides.map((slide) => {
+      const texts = Array.isArray(slide.texts) ? slide.texts : []
+      return `Slide ${slide.index}\n${texts.join('\n')}`
+    }).join('\n\n')
+  }
+  const elements = data.data && Array.isArray(data.data.elements) ? data.data.elements : []
+  return elements.map((element) => element && typeof element.text === 'string' ? element.text : '').filter(Boolean).join('\n')
+}
+
+function pptxDigest(cli) {
+  const data = cli.textData && cli.textData.data ? cli.textData.data : {}
+  const outline = cli.outline && cli.outline.data && Array.isArray(cli.outline.data.slides) ? cli.outline.data.slides : []
+  const slides = Array.isArray(data.slides) ? data.slides : []
+  const annotated = annotatedSlides(cli.annotated && cli.annotated.data ? cli.annotated.data.content : '')
+  const connectorCounts = new Map()
+  const connectorSamples = new Map()
+  const charts = cli.charts && cli.charts.data && Array.isArray(cli.charts.data.results) ? cli.charts.data.results : []
+  for (const result of (cli.connectors && cli.connectors.data && Array.isArray(cli.connectors.data.results) ? cli.connectors.data.results : [])) {
+    const match = String(result.path || '').match(/^\/slide\[(\d+)\]/)
+    if (!match) continue
+    const index = Number(match[1])
+    connectorCounts.set(index, (connectorCounts.get(index) || 0) + 1)
+    if (!connectorSamples.has(index)) connectorSamples.set(index, result)
+  }
+  const lines = [`## Office 结构（PowerPoint，共 ${data.totalSlides || slides.length} 页）`, '']
+  for (let index = 0; index < slides.length; index++) {
+    const slide = slides[index] || {}
+    const number = Number(slide.index) || index + 1
+    const meta = outline.find((item) => Number(item.index) === number) || {}
+    const texts = (Array.isArray(slide.texts) ? slide.texts : [])
+      .map((value) => String(value || '').trim())
+      .filter((value) => value !== '' && !/^\d{1,3}$/.test(value))
+    const structures = (annotated.get(number) || [])
+      .filter((line) => /\[(Group|Picture|Table|Chart|Connector|OLE|Diagram|Media)\b/i.test(line))
+      .slice(0, 12)
+    lines.push(`### Slide ${number}${meta.title ? ' — ' + meta.title : ''}`)
+    if (texts.length > 0) lines.push('文本：' + texts.join(' | '))
+    const counts = []
+    if (meta.textBoxes) counts.push(`文本框 ${meta.textBoxes}`)
+    if (meta.pictures) counts.push(`图片 ${meta.pictures}`)
+    if (meta.oleObjects) counts.push(`OLE ${meta.oleObjects}`)
+    const connectorCount = connectorCounts.get(number) || 0
+    if (connectorCount > 0) {
+      const sample = connectorSamples.get(number)
+      const format = sample && sample.format ? sample.format : {}
+      const endpoint = format.width || format.height ? `位置 ${format.x || '?'},${format.y || '?'} 尺寸 ${format.width || '?'}×${format.height || '?'}` : '无坐标'
+      counts.push(`连接线 ${connectorCount}（${endpoint}）`)
+    }
+    const chartCount = charts.filter((item) => String(item.path || '').startsWith(`/slide[${number}]`)).length
+    if (chartCount > 0) counts.push(`图表 ${chartCount}`)
+    if (counts.length > 0) lines.push('对象：' + counts.join('；'))
+    if (structures.length > 0) lines.push('图形关系：\n' + structures.map((line) => '- ' + line).join('\n'))
+    lines.push('')
+  }
+  lines.push('说明：以上是 officecli 的文本/对象树/连接线摘要；“版式缩略图”作为独立图片输入，优先用于判断页面布局与图形逻辑。')
+  return lines.join('\n')
+}
+
+function docxTablesFromHtml(html) {
+  const source = String(html || '')
+  const tables = []
+  const tableRegexp = /<table\b[^>]*>([\s\S]*?)<\/table>/gi
+  let tableMatch
+  while ((tableMatch = tableRegexp.exec(source)) !== null) {
+    const rows = []
+    const rowRegexp = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi
+    let rowMatch
+    while ((rowMatch = rowRegexp.exec(tableMatch[1])) !== null) {
+      const cells = []
+      const cellRegexp = /<(td|th)\b[^>]*>([\s\S]*?)<\/\1>/gi
+      let cellMatch
+      while ((cellMatch = cellRegexp.exec(rowMatch[1])) !== null) {
+        const value = decodeEntities(String(cellMatch[2]).replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, ' '))
+          .replace(/\s+/g, ' ').trim()
+        if (value !== '') cells.push(value)
+      }
+      if (cells.length > 0) rows.push(cells.join(' | '))
+    }
+    if (rows.length > 0) tables.push(rows.join('\n'))
+  }
+  return tables
+}
+
+function docxDigest(cli, ext) {
+  const data = cli.textData && cli.textData.data ? cli.textData.data : {}
+  const elements = Array.isArray(data.elements) ? data.elements : []
+  const lines = ['## Office 结构（Word，officecli 提取）', '', '### 正文']
+  for (const element of elements) {
+    const text = element && typeof element.text === 'string' ? element.text.trim() : ''
+    if (text === '') continue
+    if (element.type === 'table') lines.push('', `[${text}]`, '')
+    else lines.push(text)
+  }
+  const tables = docxTablesFromHtml(cli.html && cli.html.data ? cli.html.data : '')
+  if (tables.length > 0) {
+    lines.push('', '### 表格内容')
+    tables.forEach((table, index) => {
+      lines.push(`Table ${index + 1}:`, table, '')
+    })
+  }
+  const outline = cli.outline && cli.outline.data ? cli.outline.data : null
+  if (outline && Array.isArray(outline.headings) && outline.headings.length > 0) {
+    lines.push('### 标题树')
+    for (const heading of outline.headings.slice(0, 80)) {
+      lines.push(`${'#'.repeat(Math.max(1, Math.min(6, Number(heading.level) || 1)))} ${heading.text || ''}`)
+    }
+  }
+  return lines.join('\n')
+}
+
+function xlsxDigest(cli, jsText) {
+  const lines = ['## Office 结构（Excel，officecli 提取）', '']
+  const outline = cli.outline && cli.outline.data ? cli.outline.data : null
+  if (outline && Array.isArray(outline.sheets) && outline.sheets.length > 0) lines.push(`工作表：${outline.sheets.join('、')}`, '')
+  lines.push('### 工作表内容（纯 JS 回读）', '', String(jsText || '').trim())
+  return lines.join('\n')
+}
+
+
+/**
+ * 用随包 officecli 读取 Office：text + annotated/outline/对象关系，PPT 另渲染版式缩略图。
+ * TEMP/TMP 指向插件目录下的临时目录，避免 DSH 运行环境的系统 Temp ACL 拒绝。
+ */
+function runOfficecli(file, ext, timeoutMs = 120000) {
+  const executable = bundledOfficecli()
+  if (executable === null) return Promise.reject(new Error('插件内没有 officecli'))
+  const tempDir = fs.mkdtempSync(path.join(path.dirname(HERE), 'officecli-tmp-'))
+  const env = { ...process.env, TEMP: tempDir, TMP: tempDir }
+  const invoke = (args, ms = timeoutMs) => runOfficeCliCommand(executable, args, env, ms)
+  const close = () => new Promise((resolve) => {
+    execFile(executable, ['close', file], { windowsHide: true, timeout: 30000, env }, () => resolve())
+  })
+  return (async () => {
+    try {
+      const textData = await invoke(['view', file, 'text', '--json'])
+      const annotated = await invoke(['view', file, 'annotated', '--json']).catch(() => null)
+      const outline = await invoke(['view', file, 'outline', '--json']).catch(() => null)
+      const html = ext === '.docx' ? await invoke(['view', file, 'html', '--json']).catch(() => null) : null
+      let connectors = null
+      let charts = null
+      if (ext === '.pptx') {
+        connectors = await invoke(['query', file, 'connector', '--json']).catch(() => null)
+        charts = await invoke(['query', file, 'chart', '--json']).catch(() => null)
+      }
+      let image = null
+      if (ext === '.pptx') {
+        const imagePath = path.join(tempDir, 'slides-contact-sheet.png')
+        try {
+          await invoke(['view', file, 'screenshot', '--grid', 'auto', '--screenshot-width', '1600', '-o', imagePath, '--json'])
+          if (fs.existsSync(imagePath)) image = await fs.promises.readFile(imagePath)
+        } catch { /* 没有渲染能力时仍用对象关系 */ }
+      }
+      return { textData, annotated, outline, html, connectors, charts, image }
+    } finally {
+      await close()
+      try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch { /* 临时目录清理失败不影响结果 */ }
+    }
+  })()
 }
 
 /**
@@ -195,33 +360,68 @@ export async function extractDocument(file, options = {}) {
   } else if (OFFICE_EXTS.has(ext)) {
     const buffer = await fs.promises.readFile(file)
     text = ''
+    let officejs = null
+    try { officejs = extractOffice(buffer, ext) } catch { /* officecli 主路径失败时再报 */ }
+    let cli = null
     if (bundledOfficecli() !== null) {
       try {
-        const cli = await runOfficecli(file)
-        if (String(cli.text || '').trim() !== '') {
-          text = cli.text
-          extractor = 'officecli'
+        cli = await runOfficecli(file, ext)
+        const cliText = cliTextOf(cli.textData, ext)
+        if (String(cliText || '').trim() === '') throw new Error('officecli 没有返回可读内容')
+        extractor = 'officecli'
+        if (ext === '.pptx') {
+          text = pptxDigest(cli)
+          const firstSlide = cli.textData && cli.textData.data && Array.isArray(cli.textData.data.slides) ? cli.textData.data.slides[0] : null
+          const firstText = firstSlide && Array.isArray(firstSlide.texts)
+            ? firstSlide.texts.map((value) => String(value || '').trim()).find((value) => value !== '' && !/^\d{1,3}$/.test(value))
+            : ''
+          if (firstText) title = firstText
+        } else if (ext === '.docx') {
+          text = docxDigest(cli, ext)
+        } else {
+          text = xlsxDigest(cli, officejs ? officejs.text : '')
+        }
+        if (cli.image && cli.image.length > 0) {
+          meta.officeVisuals = [{ data: cli.image, mediaType: 'image/png', name: 'slides-contact-sheet.png' }]
+        }
+        meta = {
+          ...meta,
+          officecli: {
+            annotated: cli.annotated !== null,
+            outline: cli.outline !== null,
+            connectors: cli.connectors && cli.connectors.data ? cli.connectors.data.matches : 0,
+            charts: cli.charts && cli.charts.data ? cli.charts.data.matches : 0,
+            rendered: Boolean(cli.image),
+          },
         }
       } catch (error) {
-        warnings.push(`随包 officecli 提取失败，回退纯 JS：${error instanceof Error ? error.message : String(error)}`)
+        warnings.push(`officecli 提取失败，回退纯 JS：${error instanceof Error ? error.message : String(error)}`)
+        cli = null
       }
+    } else {
+      warnings.push('插件内没有 officecli，Office 使用纯 JS 回退')
     }
     if (String(text || '').trim() === '') {
-      const office = extractOffice(buffer, ext)
-      text = office.text
-      title = office.title || null
+      if (!officejs) officejs = extractOffice(buffer, ext)
+      text = officejs.text
       extractor = 'office-js'
-      meta = { ...meta, ...office.meta }
+      title = officejs.title || null
+      meta = { ...meta, ...officejs.meta }
     }
-    // docx 纯 JS 已在段落内嵌入 OMML；officecli/pptx 这里再补一次公式块。
-    if (extractor !== 'office-js' || ext === '.pptx') {
-      const officeFormulas = extractOfficeFormulas(buffer, ext)
-      if (officeFormulas.length > 0) {
-        text += '\n\n## 公式（LaTeX）\n' + officeFormulas.map((formula) => `- ${formula}`).join('\n')
-        meta = { ...meta, officeFormulas: officeFormulas.length }
+    title = title || (officejs && officejs.title) || titleFromText(text, fallbackTitle)
+    // 所有 Office 格式都补公式块：docx/pptx OMML + xlsx 单元格公式。
+    const officeFormulas = extractOfficeFormulas(buffer, ext)
+    if (officeFormulas.length > 0) {
+      text += '\n\n## 公式（LaTeX）\n' + officeFormulas.map((formula) => `- ${formula}`).join('\n')
+      meta = { ...meta, officeFormulas: officeFormulas.length }
+    }
+    if (ext === '.xlsx') {
+      const xlsxFormulas = extractXlsxFormulas(buffer)
+      if (xlsxFormulas.length > 0) {
+        text += '\n\n## Excel 公式\n' + xlsxFormulas.map((item) => `- ${item}`).join('\n')
+        meta = { ...meta, xlsxFormulas: xlsxFormulas.length }
       }
     }
-    title = title || titleFromText(text, fallbackTitle)
   } else if (ext === '.pdf') {
     const buffer = await fs.promises.readFile(file)
     text = ''
