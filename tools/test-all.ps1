@@ -1,4 +1,4 @@
-﻿# 跑 dsh-plugin-corpus v1.2.0 的全部本地验收（不需要重启 DSH）。
+﻿# 跑 dsh-plugin-corpus v1.3.0 的全部本地验收（不需要重启 DSH）。
 # 用法：powershell -NoProfile -ExecutionPolicy Bypass -File tools\test-all.ps1
 $ErrorActionPreference = 'Stop'
 
