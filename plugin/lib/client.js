@@ -244,7 +244,7 @@
           importReadFailed: '读取文件失败：',
           importPathLabel: '本机路径（可多行）',
           importPathPlaceholder: 'C:\\docs\\manual.pdf\nC:\\docs\\handbook\\\nC:\\docs\\appendix.pdf',
-          importPathHint: '每行一个文件或目录；目录会递归扫描支持格式。多行路径会批量导入同一个集合。',
+          importPathHint: '每行一个文件或目录；可直接粘贴 Windows「复制为路径」的带引号路径（自动去掉引号）。目录会递归扫描支持格式。',
           importPathRequired: '请填写本机路径（文件或目录，可多行）。',
           importTarget: '目标',
           importCollection: '目标集合',
@@ -512,7 +512,7 @@
           importReadFailed: 'Could not read file: ',
           importPathLabel: 'Local paths (one per line)',
           importPathPlaceholder: 'C:\\docs\\manual.pdf\nC:\\docs\\handbook\\\nC:\\docs\\appendix.pdf',
-          importPathHint: 'One file or directory per line; directories are scanned recursively. All paths are imported into the same collection.',
+          importPathHint: 'One file or directory per line; quoted paths copied from Windows can be pasted directly (quotes are stripped). Directories are scanned recursively.',
           importPathRequired: 'Enter at least one local path (file or directory, one per line).',
           importTarget: 'Target',
           importCollection: 'Target collection',
@@ -2907,7 +2907,9 @@
               setNote({ ok: false, text: tr.importPathRequired })
               return
             }
-            const paths = pathText.split(/\r?\n|;/).map((item) => item.trim()).filter(Boolean)
+            const paths = pathText.split(/\r?\n|;/)
+              .map((item) => String(item).trim().replace(/^["']+|["']+$/g, '').trim())
+              .filter(Boolean)
             if (paths.length === 0) {
               setNote({ ok: false, text: tr.importPathRequired })
               return

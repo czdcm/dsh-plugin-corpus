@@ -1267,12 +1267,12 @@ async function importSubmitChecks() {
   {
     const { harness, page } = bootImportPage('zh-CN', importBeans({
       13: 'path',
-      17: 'C:/docs/manual.pdf\nC:/docs/handbook/',
+      17: '"C:/docs/manual.pdf"\n\'C:/docs/handbook/\'',
       18: 'linux-kernel',
     }))
     const element = expandTree(page())
     const pathInput = findNode(element, (node) => node.type === 'textarea' && node.props
-      && node.props.value === 'C:/docs/manual.pdf\nC:/docs/handbook/')
+      && node.props.value === '"C:/docs/manual.pdf"\n\'C:/docs/handbook/\'')
     ok('批量路径模式渲染多行输入', pathInput !== null)
     const button = findButton(element, '开始导入')
     if (button) {
@@ -1285,8 +1285,8 @@ async function importSubmitChecks() {
       ok('路径模式 POST /import', post !== undefined)
       if (post) {
         const payload = JSON.parse(String(post.init.body))
-        eq('路径模式 paths[0]', payload.paths[0], 'C:/docs/manual.pdf')
-        eq('路径模式 paths[1]', payload.paths[1], 'C:/docs/handbook/')
+        eq('路径模式 paths[0]（去掉右键复制引号）', payload.paths[0], 'C:/docs/manual.pdf')
+        eq('路径模式 paths[1]（去掉单引号）', payload.paths[1], 'C:/docs/handbook/')
         eq('路径模式 collection', payload.collection, 'linux-kernel')
         eq('路径模式 AI 默认开', payload.ai, true)
         ok('路径模式不带 files', !Object.prototype.hasOwnProperty.call(payload, 'files'))

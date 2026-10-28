@@ -346,7 +346,7 @@ export function apply(ctx, config) {
       const collection = String((args && args.collection) || '').trim()
       if (collection === '') throw new Error('collection 不能为空')
       if (!scope.allow(collection)) throw new Error(`没有导入到集合 ${collection} 的权限`)
-      const raw = String((args && args.path) || '').trim()
+      const raw = String((args && args.path) || '').trim().replace(/^["']+|["']+$/g, '').trim()
       if (raw === '') throw new Error('path 不能为空')
       const source = path.isAbsolute(raw) ? raw : path.resolve(scope.subject.workspace, raw)
       const extensions = typeof args.extensions === 'string' && args.extensions.trim() !== ''
@@ -403,7 +403,7 @@ export function apply(ctx, config) {
       const collection = String((args && args.collection) || '').trim()
       if (collection === '') throw new Error('collection 不能为空')
       if (!scope.allow(collection)) throw new Error(`没有导入到集合 ${collection} 的权限`)
-      const raw = String((args && args.path) || '').trim()
+      const raw = String((args && args.path) || '').trim().replace(/^["']+|["']+$/g, '').trim()
       if (raw === '') throw new Error('path 不能为空')
       const source = path.isAbsolute(raw) ? raw : path.resolve(scope.subject.workspace, raw)
       const result = ingest.start({

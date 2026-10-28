@@ -449,7 +449,7 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
     const prefix = normalizePrefix(options.prefix)
     const paths = (Array.isArray(options.paths) ? options.paths : (options.path ? [options.path] : []))
       .filter((item) => typeof item === 'string' && item.trim() !== '')
-      .map((item) => path.resolve(item))
+      .map((item) => path.resolve(String(item).trim().replace(/^["']+|["']+$/g, '').trim()))
     const uploads = Array.isArray(options.uploads) ? options.uploads : []
     if (paths.length === 0 && uploads.length === 0) throw new Error('至少提供一个 path 或 files')
     const job = {
