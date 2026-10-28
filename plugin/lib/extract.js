@@ -29,7 +29,7 @@ const HTML_EXTS = new Set(['.html', '.htm'])
 const OFFICE_EXTS = new Set(['.docx', '.xlsx', '.pptx'])
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tif', '.tiff'])
 const MAX_TEXT_CHARS = 8 * 1024 * 1024
-const MAX_FILE_BYTES = 100 * 1024 * 1024
+const MAX_FILE_BYTES = 256 * 1024 * 1024
 
 const IMAGE_MEDIA = {
   '.png': 'image/png',
@@ -92,7 +92,7 @@ export function htmlToText(html) {
 function titleFromText(text, fallback) {
   const heading = String(text || '').match(/^#\s+(.+)$/m)
   if (heading) return heading[1].trim().slice(0, 160)
-  const first = String(text || '').split(/\r?\n/).map((line) => line.trim()).find((line) => line !== '')
+  const first = String(text || '').split(/\r?\n/).map((line) => line.trim()).find((line) => line !== '' && !/^---\s*Page\s+\d+/i.test(line))
   if (first && first.length <= 160) return first
   return fallback
 }

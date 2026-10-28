@@ -19,7 +19,7 @@ const SUPPORTED = new Set(SUPPORTED_EXTENSIONS)
 const SKIP_DIRS = new Set(['node_modules', '.git', '.corpus', '.dsh-knowledge', '__pycache__', '.svn', '.hg'])
 const MAX_FILES = 200
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-const MAX_SOURCE_BYTES = 100 * 1024 * 1024
+const MAX_SOURCE_BYTES = 256 * 1024 * 1024
 const HISTORY_LIMIT = 10
 
 function stamp() {
@@ -329,6 +329,7 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
               }
             }
           }
+          if (body.trim() !== '') aiStructured = true
         }
         // 图片：视觉不可用/失败时，用插件内置的 Windows OCR 取文字。
         if (extracted.kind === 'image' && body.trim() === '') {

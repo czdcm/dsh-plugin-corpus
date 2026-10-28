@@ -65,16 +65,24 @@ if ($Mode -eq 'image') {
 
 $document = Await ([Windows.Data.Pdf.PdfDocument]::LoadFromFileAsync($storageFile)) ([Windows.Data.Pdf.PdfDocument])
 for ($index = 0; $index -lt $document.PageCount; $index++) {
-  $page = $document.GetPage([uint32]$index)
-  $memory = New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
-  AwaitAction ($page.RenderToStreamAsync($memory))
-  $memory.Seek(0)
-  $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($memory)) ([Windows.Graphics.Imaging.BitmapDecoder])
-  $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
-  $text = Ocr-Bitmap $bitmap $engine
-  Write-Output ''
-  Write-Output ("--- Page {0} ---" -f ($index + 1))
-  Write-Output $text
-  $page.Dispose()
+  $page = $null
+  try {
+    $page = $document.GetPage([uint32]$index)
+    $memory = New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
+    AwaitAction ($page.RenderToStreamAsync($memory))
+    $memory.Seek(0)
+    $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($memory)) ([Windows.Graphics.Imaging.BitmapDecoder])
+    $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+    $text = Ocr-Bitmap $bitmap $engine
+    Write-Output ''
+    Write-Output ("--- Page {0} ---" -f ($index + 1))
+    Write-Output $text
+  } catch {
+    # 单页损坏/渲染失败不应让整本 PDF 全部失败；标记该页并继续。
+    Write-Output ''
+    Write-Output ("--- Page {0} (OCR failed: {1}) ---" -f ($index + 1), $_.Exception.Message)
+  } finally {
+    if ($page -ne $null) { $page.Dispose() }
+  }
 }
 exit 0

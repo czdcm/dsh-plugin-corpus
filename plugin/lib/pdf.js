@@ -168,7 +168,7 @@ export function pdfExtractorAvailability() {
 }
 
 /** 调用插件内置的 Windows OCR 脚本；返回纯文本。 */
-export function runWindowsOcr(file, mode = 'image', timeoutMs = 300000) {
+export function runWindowsOcr(file, mode = 'image', timeoutMs = 900000) {
   return new Promise((resolve, reject) => {
     const powershell = findPowerShell()
     if (powershell === null) {
@@ -180,15 +180,17 @@ export function runWindowsOcr(file, mode = 'image', timeoutMs = 300000) {
       reject(new Error('缺少内置 ocr_windows.ps1'))
       return
     }
+    // Windows.Data.Pdf 的 GetFileFromPathAsync 不接受正斜杠路径；统一成原生反斜杠。
+    const nativeFile = String(file).split('/').join('\\')
     execFile(powershell, [
       '-NoProfile',
       '-ExecutionPolicy', 'Bypass',
       '-File', script,
-      '-Path', file,
+      '-Path', nativeFile,
       '-Mode', mode,
     ], {
       encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
+      maxBuffer: 128 * 1024 * 1024,
       timeout: timeoutMs,
       windowsHide: true,
     }, (error, stdout, stderr) => {
