@@ -487,7 +487,8 @@ function staticChecks() {
     SOURCE.indexOf('h(CorpusGallery,') !== -1
     && SOURCE.indexOf('onExternal: (item, mode) =>') !== -1
     && SOURCE.indexOf('openMainItem(item)') !== -1
-    && SOURCE.indexOf('openSystemPicker(item)') !== -1
+    && SOURCE.indexOf("props.onExternal(item, 'choose')") !== -1
+    && SOURCE.indexOf("appIcon: '/api/dsh-plugin-corpus/app-icon'") !== -1
     && SOURCE.indexOf('onDeleted: () => { loadOverview() }') !== -1
     && SOURCE.indexOf('h(OriginalGallery,') === -1)
   ok('重建按钮带圈问号说明（? 圆形按钮 + 展开/收起文案）',
