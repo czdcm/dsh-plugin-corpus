@@ -18,6 +18,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { DatabaseSync } from 'node:sqlite'
+import { collectionNameError, isValidCollectionName } from './collection-name.js'
 
 export const META_DIR = '.corpus'
 export const TEXT_EXT = new Set(['.md', '.markdown', '.mdx', '.txt', '.rst', '.text', '.json', '.yaml', '.yml'])
@@ -39,8 +40,8 @@ export function collectionNames(root) {
   if (!fs.existsSync(root)) return []
   return fs.readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+    .filter((entry) => isValidCollectionName(entry.name))
     .map((entry) => entry.name)
-    .filter((name) => /^[A-Za-z0-9._-]{1,64}$/.test(name))
     .sort()
 }
 
@@ -580,8 +581,8 @@ function normalizePrefix(value) {
  */
 export function importInto(root, options = {}) {
   const collection = String(options.collection || '').trim()
-  if (!/^[A-Za-z0-9._-]{1,64}$/.test(collection) || collection.startsWith('.')) {
-    throw new Error('集合名只能包含字母、数字、点、下划线与短横线，且不能以点开头')
+  if (!isValidCollectionName(collection)) {
+    throw new Error(collectionNameError(collection))
   }
   const source = path.resolve(String(options.source || ''))
   let sourceStat

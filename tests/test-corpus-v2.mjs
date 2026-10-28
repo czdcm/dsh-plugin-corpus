@@ -42,6 +42,7 @@ import {
 import { createJobRunner } from '../plugin/lib/jobs.js'
 import { acquireLock, lockPath, readLock } from '../plugin/lib/lock.js'
 import { createPanelRoutes, PANEL_PREFIX } from '../plugin/lib/panel.js'
+import { isValidCollectionName } from '../plugin/lib/collection-name.js'
 
 let pass = 0
 let skip = 0
@@ -218,13 +219,20 @@ try {
   assert(fs.existsSync(path.join(root, 'imported', 'moved', 'moved.md')), 'move 导入的目标文件应存在')
   ok('move 语义：复制成功后再删除源文件')
 
-  for (const bad of ['', '..', '.hidden', 'bad name', 'a/b', 'x'.repeat(65)]) {
+  for (const bad of ['', '..', '.hidden', 'bad/name', 'a/b', 'x'.repeat(65)]) {
     expectThrows(
       () => importInto(root, { source: one, collection: bad }),
       '非法集合名 ' + JSON.stringify(bad.length > 20 ? bad.slice(0, 8) + '…' : bad),
     )
   }
-  ok('集合名校验：空 / 点开头 / 空格 / 斜杠 / 超长')
+  ok('集合名校验：空 / 点开头 / 斜杠 / 超长')
+
+  const localizedCollection = '结构力学 教材（第一册）'
+  const localizedRoot = path.join(tmp, 'localized-corpus')
+  fs.mkdirSync(localizedRoot, { recursive: true })
+  importInto(localizedRoot, { source: one, collection: localizedCollection })
+  assert(fs.existsSync(path.join(localizedRoot, localizedCollection, path.basename(one))), '中文/空格/全角括号集合名应能导入')
+  ok('集合名支持中文、空格与常用符号：' + localizedCollection)
 
   for (const bad of ['..', 'a/../b', 'a//b']) {
     expectThrows(() => importInto(root, { source: one, collection: 'imported', prefix: bad }), '非法 prefix ' + JSON.stringify(bad))
@@ -403,8 +411,8 @@ try {
       if (options.collection === 'busy-collection') {
         return { started: false, job: { id: 'ingest-busy-1', state: 'running' } }
       }
-      if (!/^[A-Za-z0-9._-]{1,64}$/.test(options.collection || '') || String(options.collection).startsWith('.')) {
-        throw new Error('集合名只能包含字母、数字、点、下划线与短横线，且不能以点开头')
+      if (!isValidCollectionName(options.collection || '')) {
+        throw new Error('集合名不合法')
       }
       return { started: true, job: { id: 'ingest-fake-1', state: 'running', collection: options.collection, total: 0 } }
     },
@@ -630,7 +638,7 @@ try {
 
   const importBusy = await invoke('POST', PANEL_PREFIX + '/import', { collection: 'busy-collection' })
   assert(importBusy.status === 200 && importBusy.body.ok === false && importBusy.body.started === false && importBusy.body.busy === true && importBusy.body.job.id === 'ingest-busy-1', 'POST /import 已有任务应 200 + busy:true + job')
-  const importBad = await invoke('POST', PANEL_PREFIX + '/import', { collection: 'bad name' })
+  const importBad = await invoke('POST', PANEL_PREFIX + '/import', { collection: 'bad/name' })
   assert(importBad.status === 400 && importBad.body.ok === false && String(importBad.body.error).includes('集合名'), 'POST /import 校验失败应 400 + error')
   ok('面板 POST /import：已有任务 busy 形态 / 校验失败 400')
 

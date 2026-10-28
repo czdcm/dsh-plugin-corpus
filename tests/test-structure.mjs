@@ -282,8 +282,8 @@ try {
   // -------------------------------------------------------------------------
   // 5) 参数与边界错误
   // -------------------------------------------------------------------------
-  await expectRejects(service.run({ text: 'x', collection: 'bad name!' }), '坏集合名（import）', 'collection 必须是合法集合名')
-  await expectRejects(service.run({ text: 'x', collection: 'bad/name', import: false }), '坏集合名（只总结）', 'collection 必须是合法集合名')
+  await expectRejects(service.run({ text: 'x', collection: 'bad/name' }), '坏集合名（import）', '集合名')
+  await expectRejects(service.run({ text: 'x', collection: 'bad/name', import: false }), '坏集合名（只总结）', '集合名')
   await expectRejects(service.run({ text: 'x', collection: 'struct-repo', prefix: 'a/../b' }), '非法 prefix', 'prefix 不能包含 . 或 ..')
   await expectRejects(service.run({ path: repo, text: 'x', collection: 'struct-repo' }), 'path+text 冲突', 'path 与 text 只能二选一')
   await expectRejects(service.run({ collection: 'struct-repo' }), '缺 path/text', '必须提供 path 或 text 之一')

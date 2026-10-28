@@ -7,8 +7,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-
-const COLLECTION_RE = /^[A-Za-z0-9._-]{1,64}$/
+import { collectionNameError, isValidCollectionName } from './collection-name.js'
 
 function stamp() {
   const now = new Date()
@@ -54,7 +53,7 @@ export function deleteDocument(root, relPath) {
   if (rel === '' || parts.some((part) => part === '' || part === '..' || part === '.')) throw new Error('非法语料路径')
   if (parts.includes('.corpus') || parts.includes('originals')) throw new Error('不能删除元数据或原件目录')
   const collection = parts[0]
-  if (!COLLECTION_RE.test(collection)) throw new Error('非法集合名')
+  if (!isValidCollectionName(collection)) throw new Error(collectionNameError(collection))
   const processedIndex = parts.indexOf('processed')
   const targetRel = processedIndex > 1 ? parts.slice(0, processedIndex).join('/') : rel
   if (!targetRel.startsWith(collection + '/') && targetRel !== collection) throw new Error('目标越界')
@@ -77,7 +76,7 @@ function removeCollectionIndex(root, collection) {
 /** 删除整个集合（移到 trash/collections/，并清理索引文件）。 */
 export function deleteCollection(root, name) {
   const collection = String(name || '').trim()
-  if (!COLLECTION_RE.test(collection)) throw new Error('非法集合名')
+  if (!isValidCollectionName(collection)) throw new Error(collectionNameError(collection))
   const source = path.join(root, collection)
   let stat
   try { stat = fs.lstatSync(source) } catch { throw new Error(`集合不存在：${collection}`) }

@@ -2,7 +2,7 @@
  * dsh-plugin-corpus — 导入任务（v1.3）。
  *
  * 把一组本机文件/浏览器上传的文档变成语料库里的 Markdown：
- *   提取（extract.js）→ 可选「内置摄取小代理」结构化/总结 → 原文件入档
+ *   提取（extract.js）→ 可选「内置摄取小代理」结构化/总结
  *   → 写 <root>/<collection>/<prefix?>/<slug>.md → 触发后台重建。
  *
  * 同一时刻只跑一个导入任务；任务状态给面板轮询。
@@ -11,6 +11,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { SUPPORTED_EXTENSIONS, extractDocument, runWindowsOcr } from './extract.js'
 import { extractFormulaLines, normalizeLatex } from './formulas.js'
+import { collectionNameError, isValidCollectionName } from './collection-name.js'
 
 const SUPPORTED = new Set(SUPPORTED_EXTENSIONS)
 const SKIP_DIRS = new Set(['node_modules', '.git', '.corpus', '.dsh-knowledge', '__pycache__', '.svn', '.hg'])
@@ -18,8 +19,6 @@ const MAX_FILES = 200
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024
 const HISTORY_LIMIT = 10
-
-const COLLECTION_RE = /^[A-Za-z0-9._-]{1,64}$/
 
 function stamp() {
   const now = new Date()
@@ -422,8 +421,8 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
     if (disposed) throw new Error('导入任务管理器已关闭')
     if (active) return { started: false, job: publicJob(active) }
     const collection = String(options.collection || '').trim()
-    if (!COLLECTION_RE.test(collection) || collection.startsWith('.')) {
-      throw new Error('集合名只能包含字母、数字、点、下划线与短横线，且不能以点开头')
+    if (!isValidCollectionName(collection)) {
+      throw new Error(collectionNameError(collection))
     }
     const prefix = normalizePrefix(options.prefix)
     const paths = (Array.isArray(options.paths) ? options.paths : (options.path ? [options.path] : []))

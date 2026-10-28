@@ -13,8 +13,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { SUPPORTED_EXTENSIONS, extractDocument } from './extract.js'
-
-const COLLECTION_RE = /^[A-Za-z0-9._-]{1,64}$/
+import { collectionNameError, isValidCollectionName } from './collection-name.js'
 const MAX_LIST_FILES = 5000
 const DEFAULT_MAX_FILES = 300
 const DEFAULT_MAX_CHARS = 48000
@@ -355,11 +354,11 @@ export function createStructureService({ root, agent, config, log, reindex }) {
   async function run(options = {}) {
     const shouldImport = options.import !== false
     const collection = String(options.collection || '').trim()
-    if (shouldImport && (collection === '' || !COLLECTION_RE.test(collection))) {
-      throw new Error('导入语料时 collection 必须是合法集合名（字母/数字/._-，≤64）')
+    if (shouldImport && (collection === '' || !isValidCollectionName(collection))) {
+      throw new Error('导入语料时 ' + collectionNameError(collection))
     }
-    if (!shouldImport && collection !== '' && !COLLECTION_RE.test(collection)) {
-      throw new Error('collection 必须是合法集合名（字母/数字/._-，≤64）')
+    if (!shouldImport && collection !== '' && !isValidCollectionName(collection)) {
+      throw new Error(collectionNameError(collection))
     }
     const prefix = normalizePrefix(options.prefix)
     const instructions = typeof options.instructions === 'string' ? options.instructions.trim() : ''

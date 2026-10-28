@@ -351,9 +351,9 @@ try {
   // 8. 参数校验 + job error 状态
   // -------------------------------------------------------------------------
   expectThrows(() => manager.start({ collection: 'docs' }), '没有 path/files', '至少提供一个 path 或 files')
-  expectThrows(() => manager.start({ paths: [readmeFile], collection: '' }), '空集合名', '集合名只能包含')
-  for (const bad of ['..', '.hidden', 'bad name', 'a/b', 'x'.repeat(65)]) {
-    expectThrows(() => manager.start({ paths: [readmeFile], collection: bad }), '非法集合名 ' + JSON.stringify(bad.slice(0, 12)), '集合名只能包含')
+  expectThrows(() => manager.start({ paths: [readmeFile], collection: '' }), '空集合名', '集合名')
+  for (const bad of ['..', '.hidden', 'bad/name', 'a/b', 'x'.repeat(65)]) {
+    expectThrows(() => manager.start({ paths: [readmeFile], collection: bad }), '非法集合名 ' + JSON.stringify(bad.slice(0, 12)), '集合名')
   }
   for (const bad of ['..', 'a/../b', 'a//b']) {
     expectThrows(() => manager.start({ paths: [readmeFile], collection: 'docs', prefix: bad }), '非法 prefix ' + JSON.stringify(bad), 'prefix 不能包含')
