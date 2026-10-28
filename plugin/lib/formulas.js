@@ -313,12 +313,6 @@ export function normalizeLatex(input) {
   return text
 }
 
-/** 统计 Markdown 中的 LaTeX 公式数量（测试/元数据用）。 */
-export function countLatexFormulas(input) {
-  const text = String(input || '')
-  return (text.match(/\$\$[\s\S]*?\$\$|\$[^$\n]+?\$/g) || []).length
-}
-
 const FORMULA_HINT = /[∑∏∫∬∭∮√∞≤≥≠≈±×÷πΠΣΔΩαβγδεζηθικλμνξρστυφχψω]/u
 
 function lineIsFormula(line) {

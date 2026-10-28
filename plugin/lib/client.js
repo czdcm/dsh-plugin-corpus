@@ -81,7 +81,6 @@
         settingsRoot: '/api/dsh-plugin-corpus/settings/root',
         settingsOpen: '/api/dsh-plugin-corpus/settings/open',
         openExternal: '/api/dsh-plugin-corpus/open-external',
-        openers: '/api/dsh-plugin-corpus/openers',
         appIcon: '/api/dsh-plugin-corpus/app-icon',
       }
 
@@ -116,7 +115,6 @@
           scope: '检索范围',
           lines: '行',
           score: '评分',
-          preview: '预览',
           previewTabTitle: '语料查看',
           previewEmpty: '点击文件列表中的语料，在这里查看内容。',
           close: '关闭',
@@ -148,7 +146,6 @@
           jobError: '重建失败：',
           pollFailed: '查询重建状态失败：',
           progress: '重建中：',
-          jobRange: '范围',
           progressLine: (collection, index, total) => `${collection} ${index}/${total}`,
           forceMode: '全量',
           incremental: '增量',
@@ -180,7 +177,6 @@
           permTitle: '语料权限',
           permDesc: '查看并编辑当前会话、工作区与全局的语料访问规则',
           permSession: '当前会话',
-          permSessionId: '会话',
           permEffective: '有效集合',
           permNoEffective: '当前会话没有可访问的集合。',
           permSessionRules: '会话规则',
@@ -218,7 +214,6 @@
           permLoadFailed: '无法加载访问信息：',
           permNoSession: '没有会话上下文，无法加载会话权限。',
           permPolicyError: '策略文件问题：',
-          permSaved: '策略已保存。',
           permRuleAdded: '规则已添加。',
           permRuleDeleted: '规则已删除。',
           permDefaultSaved: '默认动作已保存。',
@@ -255,7 +250,6 @@
           importNoCollections: '语料根下还没有集合；可直接输入新集合名，导入时会自动创建。',
           importNewCollectionHint: '可直接输入新集合名；导入时会在语料根下自动创建同名目录。支持中文、字母、数字、空格和常用符号（≤64 字符，不能含 / \\ : * ? " < > |）；模型读取新集合仍需在右栏「语料权限」授权。',
           importAutoCollectionHint: '留空会自动创建 import-日期-时间 集合，批量文件全部进入该集合。',
-          importNeedCollection: '请选择或输入目标集合。',
           settingsTitle: '语料库根目录',
           settingsDesc: '集合和索引都在这个目录里；可把整个语料库搬到新位置。',
           settingsCurrent: '当前根目录',
@@ -334,21 +328,7 @@
           galleryCollapsed: '已折叠',
           deleteRow: '删除',
           deleteRowConfirm: '确认',
-          galleryOpen: '打开语料',
-          galleryProcessed: '处理后语料（默认）',
-          galleryOriginal: '原文件',
-          galleryOriginalMissing: '无原文件',
-          galleryDefaultOpen: '用默认程序直接打开',
           galleryChooseWith: '选择软件打开',
-          galleryPickAppTitle: '选择打开软件（会记住此类型）',
-          galleryPickAppHint: '选择后，该扩展名以后默认用这个软件打开；也可手动输入程序路径。',
-          galleryPickAppManual: '手动输入程序路径…',
-          galleryPickAppCurrent: '当前默认：',
-          galleryPickAppNone: '未设置',
-          galleryPickAppCancel: '取消',
-          galleryPickAppEmpty: '没有检测到常见编辑器，可手动输入 .exe 路径。',
-          galleryPickAppFailed: '设置默认应用失败：',
-          galleryPickDefault: '选择默认应用（记住）…',
           galleryPickSystem: '使用系统软件选择器…',
           galleryNoDocs: '还没有可展示的语料；用「导入语料」或在主会话里调用 corpus_structure 后，这里会出现文件列表。',
           reindexHelpTitle: '重建按钮说明',
@@ -361,18 +341,12 @@
           deleteCollection: '删除集合',
           deleteCollectionConfirm: '确认删除集合（移到回收站）',
           deleteDone: '已删除，内容移到 .corpus/trash，可在那里恢复。',
-          deleteCollectionDone: '集合已删除，移到 .corpus/trash/collections。',
           deleteFailed: '删除失败：',
           trashHint: '删除是软删除：内容移到语料根下 .corpus/trash/<时间>/，需要时可手动恢复。',
           galleryRefresh: '刷新语料',
           galleryLoading: '正在加载语料…',
           galleryError: '加载语料失败：',
-          galleryEmpty: '还没有导入语料。用上方「导入语料」导入图片或文档。',
-          galleryViewProcessed: '查看提取结果',
-          galleryClose: '关闭',
           galleryAi: 'AI 结构化',
-          galleryOriginal: '原件',
-          galleryCollection: '集合',
           gallerySize: '大小',
           galleryImported: '导入时间',
           noCollections: '语料根下还没有集合。',
@@ -408,7 +382,6 @@
           scope: 'Scope',
           lines: 'lines',
           score: 'score',
-          preview: 'Preview',
           previewTabTitle: 'Corpus preview',
           previewEmpty: 'Click a corpus file in the list to view it here.',
           close: 'Close',
@@ -440,7 +413,6 @@
           jobError: 'Rebuild failed: ',
           pollFailed: 'Could not poll rebuild status: ',
           progress: 'Rebuilding:',
-          jobRange: 'range',
           progressLine: (collection, index, total) => `${collection} ${index}/${total}`,
           forceMode: 'full',
           incremental: 'incremental',
@@ -472,7 +444,6 @@
           permTitle: 'Corpus permissions',
           permDesc: 'View and edit corpus access rules for this session, workspace and global policy',
           permSession: 'Current session',
-          permSessionId: 'Session',
           permEffective: 'Effective collections',
           permNoEffective: 'This session can reach no collections.',
           permSessionRules: 'Session rules',
@@ -510,7 +481,6 @@
           permLoadFailed: 'Could not load access information: ',
           permNoSession: 'No session context; session permissions cannot be loaded.',
           permPolicyError: 'Policy file problem: ',
-          permSaved: 'Policy saved.',
           permRuleAdded: 'Rule added.',
           permRuleDeleted: 'Rule deleted.',
           permDefaultSaved: 'Default saved.',
@@ -546,7 +516,6 @@
           importNoCollections: 'The corpus root has no collections yet; type a new name above and it will be created on import.',
           importNewCollectionHint: 'Type a new collection name to create it under the corpus root on import (Chinese, letters, digits, spaces and common symbols; max 64 chars, no / \\ : * ? " < > |). Model access still needs a grant in the right sidebar.',
           importAutoCollectionHint: 'Leave empty to auto-create an import-<date>-<time> collection; all batch files go into it.',
-          importNeedCollection: 'Choose or type a target collection.',
           settingsTitle: 'Corpus root',
           settingsDesc: 'Collections and indexes live here; you can move the whole corpus to a new location.',
           settingsCurrent: 'Current root',
@@ -625,21 +594,7 @@
           galleryCollapsed: 'collapsed',
           deleteRow: 'Delete',
           deleteRowConfirm: 'Confirm',
-          galleryOpen: 'Open document',
-          galleryProcessed: 'Processed (default)',
-          galleryOriginal: 'Original file',
-          galleryOriginalMissing: 'No original file',
-          galleryDefaultOpen: 'Open with default app',
           galleryChooseWith: 'Open with…',
-          galleryPickAppTitle: 'Choose an app (remember for this file type)',
-          galleryPickAppHint: 'The chosen app becomes the default for this extension; you can also enter an executable path.',
-          galleryPickAppManual: 'Enter executable path…',
-          galleryPickAppCurrent: 'Current default: ',
-          galleryPickAppNone: 'none',
-          galleryPickAppCancel: 'Cancel',
-          galleryPickAppEmpty: 'No common editors detected; enter an .exe path manually.',
-          galleryPickAppFailed: 'Could not set default app: ',
-          galleryPickDefault: 'Choose default app (remember)…',
           galleryPickSystem: 'Use system app picker…',
           galleryNoDocs: 'No corpus documents yet. Import files or call corpus_structure in the main session, then files will appear here.',
           reindexHelpTitle: 'Rebuild button help',
@@ -652,18 +607,12 @@
           deleteCollection: 'Delete collection',
           deleteCollectionConfirm: 'Confirm delete collection (move to trash)',
           deleteDone: 'Deleted; content moved to .corpus/trash and can be restored there.',
-          deleteCollectionDone: 'Collection deleted and moved to .corpus/trash/collections.',
           deleteFailed: 'Delete failed: ',
           trashHint: 'Deletion is soft: content moves to .corpus/trash/<time>/ under the corpus root and can be restored manually.',
           galleryRefresh: 'Refresh corpus',
           galleryLoading: 'Loading corpus…',
           galleryError: 'Could not load corpus: ',
-          galleryEmpty: 'No corpus yet. Use Import corpus above to add images or documents.',
-          galleryViewProcessed: 'View extracted text',
-          galleryClose: 'Close',
           galleryAi: 'AI structured',
-          galleryOriginal: 'Original',
-          galleryCollection: 'Collection',
           gallerySize: 'Size',
           galleryImported: 'Imported',
           noCollections: 'No collections under the corpus root.',
@@ -764,14 +713,6 @@
         } catch {
           return String(value)
         }
-      }
-
-      /** 命中片段的首行（hit.lines 形如 "45-51"）；解析失败回退 1。 */
-      function firstLineOf(value) {
-        const match = /^\s*(\d+)/.exec(String(value || ''))
-        if (match === null) return 1
-        const line = Number(match[1])
-        return Number.isFinite(line) && line > 0 ? line : 1
       }
 
       /** 预览文本：宿主 readFile 已带行号；若将来返回纯文本，这里补上行号。 */
@@ -1151,22 +1092,6 @@
         )
       }
 
-      /** 上传/文档图标：右栏「语料导入」tab 与 guide 条目共用。 */
-      function UploadIcon(props) {
-        const size = props && Number(props.size) ? Number(props.size) : 16
-        const active = props && props.active === true
-        return h('svg', {
-          width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
-          stroke: 'currentColor', strokeWidth: active ? 2 : 1.7,
-          strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true',
-        },
-          h('path', { d: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z' }),
-          h('path', { d: 'M14 3v5h5' }),
-          h('path', { d: 'M12 12v6' }),
-          h('path', { d: 'm9.5 14.5 2.5-2.5 2.5 2.5' }),
-        )
-      }
-
       /** 策略规则列表（只读）。 */
       function RuleList(t, rules, emptyText) {
         if (!Array.isArray(rules) || rules.length === 0) return h('p', { style: SMALL }, emptyText)
@@ -1460,34 +1385,6 @@
         )
       }
 
-      /** 重建按钮旁的圆形问号说明。 */
-      function ReindexHelp() {
-        const t = copy()
-        const [open, setOpen] = React.useState(false)
-        return h('div', { style: { position: 'relative', display: 'inline-flex' } },
-          h('button', {
-            type: 'button',
-            style: { ...BTN, borderRadius: '50%', padding: '2px 8px', lineHeight: '18px' },
-            title: t.reindexHelpTitle,
-            'aria-label': t.reindexHelpTitle,
-            onClick: () => setOpen((value) => !value),
-          }, '?'),
-          open ? h('div', {
-            style: {
-              position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 30,
-              width: 'min(380px, 78vw)', padding: '10px', boxSizing: 'border-box',
-              background: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)',
-              border: '1px solid var(--dsw-alias-border-l2)', borderRadius: '8px',
-              boxShadow: '0 6px 18px rgba(0,0,0,0.28)', fontSize: '12px', lineHeight: '18px',
-            },
-          },
-            h('p', { style: { margin: '0 0 8px' } }, t.reindexHelpIncremental),
-            h('p', { style: { margin: '0 0 8px' } }, t.reindexHelpForce),
-            h('button', { type: 'button', style: BTN, onClick: () => setOpen(false) }, t.reindexHelpClose),
-          ) : null,
-        )
-      }
-
       /** 主页面「语料文件」：按集合分组的 Windows 资源管理器式列表。 */
       function CorpusGallery(props) {
         const t = copy()
@@ -1497,7 +1394,6 @@
         const [expanded, setExpanded] = React.useState({})
         const [expandedFolders, setExpandedFolders] = React.useState({})
         const [menuPath, setMenuPath] = React.useState(null)
-        const [openerState, setOpenerState] = React.useState(null)
 
         const load = React.useCallback(() => {
           setData((prev) => ({ ...prev, loading: true, error: null }))
@@ -1521,8 +1417,8 @@
           let target = null
           try { target = window } catch { target = null }
           if (target && typeof target.addEventListener === 'function') {
-            target.addEventListener('dsh-corpus-originals-changed', onChange)
-            return () => target.removeEventListener('dsh-corpus-originals-changed', onChange)
+            target.addEventListener('dsh-corpus-files-changed', onChange)
+            return () => target.removeEventListener('dsh-corpus-files-changed', onChange)
           }
           return undefined
         }, [load])
@@ -1563,65 +1459,9 @@
         const toggleGroup = (name) => setExpanded((prev) => ({ ...prev, [name]: !prev[name] }))
         const toggleFolder = (key) => setExpandedFolders((prev) => ({ ...prev, [key]: !prev[key] }))
 
-        const openOpenerPicker = (item) => {
-          setMenuPath(null)
-          const ext = extensionOf(item.path)
-          setOpenerState({ path: item.path, ext, loading: true, error: null, apps: [], current: null })
-          getJson(API.openers + '?ext=' + encodeURIComponent(ext)).then((body) => {
-            setOpenerState((prev) => prev === null ? prev : ({
-              ...prev,
-              loading: false,
-              apps: Array.isArray(body && body.apps) ? body.apps : [],
-              current: body && body.current ? body.current : null,
-            }))
-          }).catch((error) => {
-            setOpenerState((prev) => prev === null ? prev : ({ ...prev, loading: false, error: errorText(error) }))
-          })
-        }
-
-        const chooseOpener = (appPath, appName) => {
-          if (!openerState || typeof appPath !== 'string' || appPath === '') return
-          const target = openerState
-          postJson(API.openExternal, { path: target.path, app: appPath, appName: appName || '' }).then(() => {
-            setOpenerState(null)
-            try {
-              setTimeout(() => window.dispatchEvent(new CustomEvent('dsh-corpus-icons-changed')), 500)
-            } catch { /* 图标刷新失败不影响打开 */ }
-          }).catch((error) => {
-            setOpenerState((prev) => prev === null ? prev : ({ ...prev, error: t.galleryPickAppFailed + errorText(error) }))
-          })
-        }
-
-        const openSystemPicker = (item) => {
-          setMenuPath(null)
-          const ext = extensionOf(item.path)
-          postJson(API.openExternal, { path: item.path, mode: 'choose', remember: true }).then(() => {
-            let tries = 0
-            const timer = setInterval(() => {
-              tries += 1
-              getJson(API.openers + '?ext=' + encodeURIComponent(ext)).then((body) => {
-                if (body && body.current && typeof body.current.path === 'string') {
-                  clearInterval(timer)
-                  try { window.dispatchEvent(new CustomEvent('dsh-corpus-icons-changed')) } catch { /* 图标刷新失败不影响 */ }
-                }
-              }).catch(() => {})
-              if (tries >= 60) clearInterval(timer)
-            }, 1000)
-          }).catch((error) => {
-            try { window.alert(t.externalOpenFailed + errorText(error)) } catch { /* 无法弹窗时至少不吞掉 */ }
-          })
-        }
-
         const openMainItem = (item) => {
           setMenuPath(null)
           if (typeof props.onExternal === 'function') props.onExternal(item, 'default')
-        }
-
-        const manualOpener = () => {
-          if (!openerState) return
-          let value = ''
-          try { value = window.prompt(t.galleryPickAppManual, '') || '' } catch { value = '' }
-          if (value.trim() !== '') chooseOpener(value.trim(), '')
         }
 
         const buildTree = (items) => {
@@ -1807,47 +1647,6 @@
           )
         }
 
-        const openerDialog = openerState === null ? null : h('div', {
-          style: {
-            position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0, 0, 0, 0.62)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
-          },
-          onClick: () => setOpenerState(null),
-        },
-          h('div', {
-            style: {
-              width: 'min(520px, 92vw)', maxHeight: '80vh', overflow: 'auto', padding: '16px',
-              background: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)',
-              border: '1px solid var(--dsw-alias-border-l2)', borderRadius: '10px', boxSizing: 'border-box',
-            },
-            onClick: (event) => { if (event && typeof event.stopPropagation === 'function') event.stopPropagation() },
-          },
-            h('h3', { style: { margin: '0 0 6px', fontSize: '15px' } }, t.galleryPickAppTitle),
-            h('p', { style: SMALL }, t.galleryPickAppHint),
-            h('p', { style: SMALL }, t.galleryPickAppCurrent +
-              (openerState.current && openerState.current.name
-                ? openerState.current.name + ' — ' + openerState.current.path
-                : t.galleryPickAppNone)),
-            openerState.loading ? h('p', { style: SMALL }, t.loading) : null,
-            openerState.error !== null ? h('p', { role: 'status', style: STATUS(false) }, openerState.error) : null,
-            !openerState.loading && openerState.apps.length === 0
-              ? h('p', { style: SMALL }, t.galleryPickAppEmpty)
-              : null,
-            h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' } },
-              openerState.apps.map((app, index) => h('button', {
-                key: 'opener-' + index + '-' + app.path,
-                type: 'button',
-                style: { ...BTN, display: 'block', width: '100%', textAlign: 'left' },
-                onClick: () => chooseOpener(app.path, app.name),
-              }, app.name + ' — ' + app.path)),
-            ),
-            h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' } },
-              h('button', { type: 'button', style: BTN, onClick: manualOpener }, t.galleryPickAppManual),
-              h('button', { type: 'button', style: BTN_GHOST, onClick: () => setOpenerState(null) }, t.galleryPickAppCancel),
-            ),
-          ),
-        )
-
         return h('section', { style: SECTION },
           h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' } },
             h('h2', { style: H2 }, t.galleryTitle),
@@ -1864,7 +1663,6 @@
           h('p', { style: SMALL }, t.galleryDesc),
           h('p', { style: SMALL }, t.galleryExpandHint),
           body,
-          openerDialog,
         )
       }
 
@@ -2298,8 +2096,8 @@
                 try {
                   let target = null
                   try { target = window } catch { target = null }
-                  if (target && typeof target.dispatchEvent === 'function') target.dispatchEvent(new CustomEvent('dsh-corpus-originals-changed'))
-                } catch { /* 刷新缩略图失败不影响删除 */ }
+                  if (target && typeof target.dispatchEvent === 'function') target.dispatchEvent(new CustomEvent('dsh-corpus-files-changed'))
+                } catch { /* 刷新文件列表失败不影响删除 */ }
               },
             }),
           ),
@@ -2331,8 +2129,8 @@
                   try {
                     let target = null
                     try { target = window } catch { target = null }
-                    if (target && typeof target.dispatchEvent === 'function') target.dispatchEvent(new CustomEvent('dsh-corpus-originals-changed'))
-                  } catch { /* 刷新缩略图失败不影响删除 */ }
+                    if (target && typeof target.dispatchEvent === 'function') target.dispatchEvent(new CustomEvent('dsh-corpus-files-changed'))
+                  } catch { /* 刷新文件列表失败不影响删除 */ }
                 },
               }),
             ),
@@ -2926,9 +2724,9 @@
                 let target = null
                 try { target = window } catch { target = null }
                 if (target && typeof target.dispatchEvent === 'function') {
-                  target.dispatchEvent(new CustomEvent('dsh-corpus-originals-changed'))
+                  target.dispatchEvent(new CustomEvent('dsh-corpus-files-changed'))
                 }
-              } catch { /* 刷新原件失败不影响导入结果 */ }
+              } catch { /* 刷新文件列表失败不影响导入结果 */ }
             }).catch((error) => {
               if (!mountedRef.current || gate.generation !== generation) return
               const tr = copy()

@@ -18,7 +18,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { findPowerShell } from './pdf.js'
-import { listOpenerApps, openerFor, saveOpener, validAppPath } from './openers.js'
 import {
   collectionNames,
   collectionStatus,
@@ -48,60 +47,6 @@ function externalEnv(extra = {}) {
     if (lower === 'electron_run_as_node' || lower === 'electron_no_attach_console') delete env[key]
   }
   return env
-}
-
-/** 解析 Windows 当前为该扩展名记录的应用（UserChoice → HKCR → OpenWithList）。 */
-async function resolveAssociatedApp(extension) {
-  if (process.platform !== 'win32') return null
-  const powershell = findPowerShell()
-  if (powershell === null) return null
-  const ext = '.' + String(extension || '').trim().toLowerCase().replace(/^\./, '')
-  if (ext === '.') return null
-  const script = [
-    '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)',
-    '$fileExt = $env:DSH_ASSOC_EXT',
-    '$app = $null',
-    'function Resolve-App([string]$name) {',
-    '  foreach ($root in @("HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths", "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths")) {',
-    '    $candidate = (Get-ItemProperty -LiteralPath ($root + "\\" + $name) -ErrorAction SilentlyContinue)."(default)"',
-    '    if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate }',
-    '  }',
-    '  try { return (Get-Command $name -ErrorAction Stop).Source } catch { return $null }',
-    '}',
-    '$prog = $null',
-    '$choice = Get-ItemProperty -LiteralPath ("HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\" + $fileExt + "\\UserChoice") -ErrorAction SilentlyContinue',
-    'if ($choice -and $choice.ProgId) { $prog = $choice.ProgId }',
-    'if (-not $prog) { $prog = (Get-ItemProperty -LiteralPath ("Registry::HKEY_CLASSES_ROOT\\" + $fileExt) -ErrorAction SilentlyContinue)."(default)" }',
-    'if ($prog) {',
-    '  $cmd = (Get-ItemProperty -LiteralPath ("Registry::HKEY_CLASSES_ROOT\\" + $prog + "\\shell\\open\\command") -ErrorAction SilentlyContinue)."(default)"',
-    '  if ($cmd) {',
-    '    if ($cmd -match \'^\\s*"([^"]+)"\') { $app = $matches[1] }',
-    '    elseif ($cmd -match \'^\\s*(\\S+)\') { $app = $matches[1] }',
-    '  }',
-    '}',
-    'if (-not $app) {',
-    '  $openWith = Get-ItemProperty -LiteralPath ("HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\" + $fileExt + "\\OpenWithList") -ErrorAction SilentlyContinue',
-    '  if ($openWith -and $openWith.MRUList) { $letter = $openWith.MRUList.Substring(0, 1); $exe = $openWith.$letter; if ($exe) { $app = Resolve-App $exe } }',
-    '}',
-    'if (-not $app -or -not (Test-Path -LiteralPath $app)) { exit 2 }',
-    '$name = (Get-Item -LiteralPath $app).VersionInfo.FileDescription',
-    'if (-not $name) { $name = [IO.Path]::GetFileNameWithoutExtension($app) }',
-    '@{ name = $name; path = $app } | ConvertTo-Json -Compress',
-  ].join('\n')
-  const result = await new Promise((resolve) => {
-    execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      encoding: 'utf8', maxBuffer: 1024 * 1024, windowsHide: true,
-      env: externalEnv({ DSH_ASSOC_EXT: ext }),
-    }, (error, stdout) => resolve({ error, stdout: String(stdout || '').trim() }))
-  })
-  if (result.error || result.stdout === '') return null
-  try {
-    const parsed = JSON.parse(result.stdout)
-    if (!parsed || typeof parsed.path !== 'string' || !fs.existsSync(parsed.path)) return null
-    return { name: typeof parsed.name === 'string' && parsed.name !== '' ? parsed.name : path.basename(parsed.path), path: parsed.path }
-  } catch {
-    return null
-  }
 }
 
 function resolveCorpusFile(root, relPath) {
@@ -637,20 +582,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
     }),
   })
 
-  // 外部查看器候选：常见已安装编辑器 + 当前扩展名已记住的程序。
-  routes.push({
-    kind: 'exact',
-    path: `${PANEL_PREFIX}/openers`,
-    handler: guarded(async (req, res) => {
-      if (req.method !== 'GET') { sendJson(res, 405, { ok: false, error: 'method not allowed' }); return }
-      const ext = queryOf(req).get('ext') || ''
-      const info = listOpenerApps(root, ext)
-      const resolved = await resolveAssociatedApp(ext)
-      sendJson(res, 200, { ok: true, ...info, resolved })
-    }),
-  })
-
-  // 当前文件类型的默认应用图标（用于文件列表的类型图标）。
+  // 当前文件类型的默认应用图标（用于「用外部软件打开」按钮）。
   routes.push({
     kind: 'exact',
     path: `${PANEL_PREFIX}/app-icon`,
@@ -673,10 +605,9 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
       }
       const powershell = findPowerShell()
       if (powershell === null) { sendJson(res, 501, { ok: false, error: 'Windows PowerShell 不可用' }); return }
-      const mapped = openerFor(root, 'x.' + ext)
       const script = [
         '$ErrorActionPreference = "Stop"',
-        '$app = $env:DSH_ICON_APP',
+        '$app = $null',
         '$ext = $env:DSH_ICON_EXT',
         'function Resolve-App([string]$name) {',
         '  foreach ($root in @("HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths", "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths")) {',
@@ -720,7 +651,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
       const result = await new Promise((resolve) => {
         execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], {
           encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, windowsHide: true,
-          env: externalEnv({ DSH_ICON_EXT: "." + ext, DSH_ICON_APP: mapped ? mapped.path : '' }),
+          env: externalEnv({ DSH_ICON_EXT: "." + ext }),
         }, (error, stdout) => resolve({ error, stdout: String(stdout || '').trim() }))
       })
       if (result.error || result.stdout === '') { sendJson(res, 404, { ok: false, error: '没有可用的默认应用图标' }); return }
@@ -751,28 +682,6 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
         sendJson(res, 500, { ok: false, error: 'Windows PowerShell 不可用' }); return
       }
       try {
-        const requestedApp = body && typeof body.app === 'string' ? validAppPath(body.app) : null
-        if (body && typeof body.app === 'string' && requestedApp === null) {
-          sendJson(res, 400, { ok: false, error: '程序路径必须是存在的 .exe 文件' })
-          return
-        }
-        const remembered = mode === 'choose' ? null : openerFor(root, resolved.rel)
-        const appPath = requestedApp || (remembered ? remembered.path : null)
-        if (appPath !== null) {
-          if (requestedApp !== null) {
-            saveOpener(root, resolved.rel, {
-              name: body.appName || path.basename(appPath),
-              path: appPath,
-            })
-          }
-          const appScript = "Start-Process -FilePath $env:DSH_CORPUS_OPEN_APP -ArgumentList ('\"' + $env:DSH_CORPUS_OPEN_FILE + '\"')"
-          execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command', appScript], {
-            windowsHide: true,
-            env: externalEnv({ DSH_CORPUS_OPEN_FILE: resolved.abs, DSH_CORPUS_OPEN_APP: appPath }),
-          }, () => {})
-          sendJson(res, 200, { ok: true, path: resolved.rel, mode: 'app', app: appPath })
-          return
-        }
         const chooseScript = "$ErrorActionPreference = 'Stop'; Start-Process -FilePath rundll32.exe -ArgumentList 'shell32.dll,OpenAs_RunDLL', $env:DSH_CORPUS_OPEN_FILE"
         // 没有文件关联时 Start-Process 可能静默成功但不打开任何窗口；先检查关联，
         // 查不到就自动退回到 Windows「打开方式」，让用户完成第一次选择。
@@ -820,64 +729,6 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
           windowsHide: true,
           env: externalEnv({ DSH_CORPUS_OPEN_FILE: resolved.abs, DSH_HOST_EXE: process.execPath }),
         }, () => {})
-        // 系统选择器不会告诉插件用户最终选了哪个程序；监听新启动的进程，
-        // 把带该文件路径的进程记成插件级的扩展名默认应用。
-        if (body && body.remember !== false && requestedApp === null) {
-          const watcherScript = [
-            '$file = $env:DSH_CORPUS_OPEN_FILE',
-            '$hostExe = $env:DSH_HOST_EXE',
-            '$ext = [IO.Path]::GetExtension($file)',
-            '$exclude = @("rundll32.exe", "OpenWith.exe", "explorer.exe", "powershell.exe", "pwsh.exe", "dllhost.exe", "DeepSeek Harness.exe")',
-            'function Resolve-App([string]$name) {',
-            '  foreach ($root in @("HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths", "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths")) {',
-            '    $candidate = (Get-ItemProperty -LiteralPath ($root + "\\" + $name) -ErrorAction SilentlyContinue)."(default)"',
-            '    if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate }',
-            '  }',
-            '  try { return (Get-Command $name -ErrorAction Stop).Source } catch { return $null }',
-            '}',
-            '$openWithKey = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\" + $ext + "\\OpenWithList"',
-            '$beforeMru = $null',
-            'if ($ext) { $beforeMru = (Get-ItemProperty -LiteralPath $openWithKey -ErrorAction SilentlyContinue).MRUList }',
-            '$beforePids = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ProcessId)',
-            'for ($i = 0; $i -lt 240; $i++) {',
-            '  Start-Sleep -Milliseconds 500',
-            '  $proc = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {',
-            '    ($beforePids -notcontains $_.ProcessId) -and $_.CommandLine -and $_.ExecutablePath -and',
-            '    ($exclude -notcontains $_.Name) -and ($_.ExecutablePath -ne $hostExe) -and',
-            '    ($_.CommandLine.IndexOf($file, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)',
-            '  } | Select-Object -First 1',
-            '  if ($proc) {',
-            '    @{ name = $proc.Name; path = $proc.ExecutablePath } | ConvertTo-Json -Compress',
-            '    exit 0',
-            '  }',
-            '  if ($i -ge 4 -and $ext) {',
-            '    $mru = (Get-ItemProperty -LiteralPath $openWithKey -ErrorAction SilentlyContinue).MRUList',
-            '    if ($mru) {',
-            '      $letter = $mru.Substring(0, 1)',
-            '      $exe = (Get-ItemProperty -LiteralPath $openWithKey -ErrorAction SilentlyContinue).$letter',
-            '      if ($exe -and ($exclude -notcontains $exe)) {',
-            '        $app = Resolve-App $exe',
-            '        if ($app -and $app -ne $hostExe -and ($mru -ne $beforeMru -or $i -ge 40)) {',
-            '          @{ name = $exe; path = $app } | ConvertTo-Json -Compress',
-            '          exit 0',
-            '        }',
-            '      }',
-            '    }',
-            '  }',
-            '}',
-          ].join('\n')
-          execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command', watcherScript], {
-            windowsHide: true, encoding: 'utf8', maxBuffer: 1024 * 1024,
-            env: externalEnv({ DSH_CORPUS_OPEN_FILE: resolved.abs, DSH_HOST_EXE: process.execPath }),
-          }, (error, stdout) => {
-            if (error || !stdout) return
-            try {
-              const detected = JSON.parse(String(stdout).trim())
-              const app = validAppPath(detected && detected.path)
-              if (app !== null) saveOpener(root, resolved.rel, { name: detected.name || path.basename(app), path: app })
-            } catch { /* 检测不到就保持未关联 */ }
-          })
-        }
         sendJson(res, 200, { ok: true, path: resolved.rel, mode })
       } catch (error) {
         sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) })

@@ -41,15 +41,6 @@ function decodePdfString(raw) {
   return value
 }
 
-function decodeHexString(raw) {
-  const hex = String(raw || '').replace(/[^0-9a-f]/gi, '')
-  let value = ''
-  for (let index = 0; index + 1 < hex.length; index += 2) {
-    value += String.fromCharCode(parseInt(hex.slice(index, index + 2), 16))
-  }
-  return value
-}
-
 function textFromContent(content) {
   const parts = []
   // Tj / ' / " 的字符串

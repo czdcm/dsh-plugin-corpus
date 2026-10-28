@@ -1,7 +1,7 @@
 // dsh-plugin-corpus v1.5 — 插件入口集成测试（Cordis 桩）。
 //
 // 目的：验证 plugin/lib/index.js 的 apply() 真的能把 10 个工具、systemPrompt 注入、
-// webServer 19 条路由挂起来，并用临时语料跑通「自动建索引 → 检索 → 读取 → 导入 → 异步重建
+// webServer 18 条路由挂起来，并用临时语料跑通「自动建索引 → 检索 → 读取 → 导入 → 异步重建
 // → corpus_ingest 摄取 → v1.4 corpus_structure / corpus_summarize_session 主会话接口
 // → v1.5 /settings 根目录 API」的工具闭环。
 // 不依赖 DSH 运行时：把 lib/ 复制到临时目录，在它的 node_modules 下放
@@ -144,7 +144,7 @@ try {
     deriveMessages() {
       return [
         { role: 'user', content: [{ type: 'text', text: '请把这次 mount 测试总结进语料' }], source: { kind: 'user' } },
-        { role: 'assistant', content: [{ type: 'text', text: '已完成 10 个工具与 19 条路由的挂载验证' }] },
+        { role: 'assistant', content: [{ type: 'text', text: '已完成 10 个工具与 18 条路由的挂载验证' }] },
       ]
     },
   }
@@ -162,9 +162,9 @@ try {
   }
   ok('apply 注册 11 个工具（v1.3 的 8 + v1.4 的 corpus_structure / corpus_summarize_session）')
 
-  assert(fake.routes.length === 19, '注册 19 条面板路由，实际 ' + fake.routes.length)
+  assert(fake.routes.length === 18, '注册 18 条面板路由，实际 ' + fake.routes.length)
   assert(fake.routes.every((route) => route.kind === 'exact' && route.path.startsWith('/api/dsh-plugin-corpus/')), '面板路由形状')
-  for (const suffix of ['access', 'import/targets', 'import', 'import/status', 'openers', 'app-icon', 'settings', 'settings/root', 'settings/open', 'gallery', 'delete']) {
+  for (const suffix of ['access', 'import/targets', 'import', 'import/status', 'app-icon', 'settings', 'settings/root', 'settings/open', 'gallery', 'delete']) {
     assert(fake.routes.some((route) => route.path === '/api/dsh-plugin-corpus/' + suffix), '缺少路由 ' + suffix)
   }
   ok('apply 挂载 19 条 /api/dsh-plugin-corpus 路由（含 /access、v1.3 /import/*）')

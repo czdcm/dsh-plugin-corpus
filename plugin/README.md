@@ -9,7 +9,7 @@ dsh-plugin-corpus 是 **DeepSeek Harness (DSH)** 的文件语料库插件。
 - **模型只读 `processed/`**：插件不再保存源文件；
 - **一切访问先过 ACL**：按工作区/会话/路径授权，默认拒绝。
 
-当前版本：**1.0.0**。
+当前版本：**1.1.0**。
 
 ---
 
@@ -55,7 +55,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 - **导入语料**：浏览器文件可多选；本机路径可多行输入（每行一个文件/目录），同一批全部导入同一个集合；集合留空会自动创建 `import-日期-时间`；集合名支持中文、空格和常用符号（≤64 字符，不能含 `/ \ : * ? " < > |`）；
 - **公式**：HTML MathML、Word/PowerPoint OMML、Unicode 数学符号和已有 LaTeX 会统一整理为 `$...$` / `$$...$$`；PDF 公式行也会保留为 LaTeX 公式块（插图不要求识别）；
 - **检索**：按关键词搜索已索引的 `processed/` 内容；结果只用于定位，不直接打开预览；
-- **查看**：文件列表每行的「用外部软件打开」主按钮优先读取 Windows 默认关联直接打开；没有关联时打开系统软件选择器并记住；`▾` 可再次打开系统软件选择器；文件列表的图标/名称/类型跟随处理后语料类型，按钮只显示默认应用图标，右侧箭头保留系统选择器；不再内置右侧栏预览；
+- **查看**：文件列表每行的「用外部软件打开」主按钮优先读取 Windows 默认关联直接打开；没有关联时打开系统软件选择器，由 Windows 记录本次选择；`▾` 可再次打开系统软件选择器；文件列表的图标/名称/类型跟随处理后语料类型，按钮只显示默认应用图标，右侧箭头保留系统选择器；不再内置右侧栏预览；
 - **语料文件**：按集合分组的资源管理器式列表；
   - 集合组默认折叠，点集合标题 `▸`/`▾` 展开或折叠；
   - 顶部有「全部展开 / 全部折叠」；
@@ -213,7 +213,7 @@ GET  /access            GET  /import/targets    POST /import
 GET  /import/status     POST /delete            GET  /gallery
 GET  /settings          POST /settings/root     POST /settings/open
 GET  /settings          POST /settings/root     POST /settings/open
-GET  /openers            GET  /app-icon
+GET  /app-icon
 POST /open-external
 GET/POST /policy
 ```

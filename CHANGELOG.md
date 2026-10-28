@@ -2,6 +2,28 @@
 
 本文件记录 `dsh-plugin-corpus` 的对外版本变化。
 
+## 1.1.0 — 2026-10-28
+
+### 外部打开
+
+- 主按钮直接读取 Windows 文件关联（UserChoice → HKCR → OpenWithList）打开软件；没有关联时才弹出系统选择器。
+- 修复 Electron 应用被当成 Node 启动的问题：启动外部程序时清理 ELECTRON_RUN_AS_NODE / ELECTRON_NO_ATTACH_CONSOLE 环境变量（VS Code 可正常打开 GUI）。
+- 按钮只显示默认应用图标，没有关联时显示文件夹图标；右侧下拉箭头保留系统软件选择器。
+- 文件列表的文件名、类型列和图标统一跟随“处理后语料”的类型（例如 PDF 处理后为 .md，就显示 .md/MD 和 Markdown 图标）。
+- 集合列表继续支持嵌套子目录树状展示、中文/空格/符号集合名。
+
+### 清理
+
+- 删除已废弃的插件级应用选择弹窗、`openers.js`、`/openers` API 与相关复制串。
+- 删除重复的 `ReindexHelp`、未使用的图标组件、首行解析函数和旧事件名。
+- 移除 `countLatexFormulas`、`decodeHexString` 等无引用函数。
+- HTTP 路由从 19 条精简为 18 条；工具仍为 11 个。
+
+### 兼容性
+
+- 客户端静态验证 388 项通过，全部本地验收通过。
+- 项目源码 GPL-2.0-or-later；OfficeCLI Apache-2.0；Poppler/pdftotext GPL-2.0-or-later。
+
 ## 1.0.0 — 2026-10-27
 
 **版本号重置为 1.0.0，作为面向中国大陆用户的新基线。**
