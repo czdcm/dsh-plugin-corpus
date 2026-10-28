@@ -40,6 +40,16 @@ export { policySummary }
 export const PANEL_PREFIX = '/api/dsh-plugin-corpus'
 const iconCache = new Map()
 
+/** DSH 是 Electron/Node 宿主，不能让被打开的外部 Electron 应用继承这些变量。 */
+function externalEnv(extra = {}) {
+  const env = { ...process.env, ...extra }
+  for (const key of Object.keys(env)) {
+    const lower = key.toLowerCase()
+    if (lower === 'electron_run_as_node' || lower === 'electron_no_attach_console') delete env[key]
+  }
+  return env
+}
+
 function resolveCorpusFile(root, relPath) {
   const rel = String(relPath || '').replace(/\\/g, '/')
   const parts = rel.split('/')
@@ -654,7 +664,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
       const result = await new Promise((resolve) => {
         execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], {
           encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, windowsHide: true,
-          env: { ...process.env, DSH_ICON_EXT: "." + ext, DSH_ICON_APP: mapped ? mapped.path : '' },
+          env: externalEnv({ DSH_ICON_EXT: "." + ext, DSH_ICON_APP: mapped ? mapped.path : '' }),
         }, (error, stdout) => resolve({ error, stdout: String(stdout || '').trim() }))
       })
       if (result.error || result.stdout === '') { sendJson(res, 404, { ok: false, error: '没有可用的默认应用图标' }); return }
@@ -702,7 +712,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
           const appScript = "Start-Process -FilePath $env:DSH_CORPUS_OPEN_APP -ArgumentList ('\"' + $env:DSH_CORPUS_OPEN_FILE + '\"')"
           execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command', appScript], {
             windowsHide: true,
-            env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs, DSH_CORPUS_OPEN_APP: appPath },
+            env: externalEnv({ DSH_CORPUS_OPEN_FILE: resolved.abs, DSH_CORPUS_OPEN_APP: appPath }),
           }, () => {})
           sendJson(res, 200, { ok: true, path: resolved.rel, mode: 'app', app: appPath })
           return
@@ -752,7 +762,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
         const script = mode === 'choose' ? chooseScript : defaultScript
         execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], {
           windowsHide: true,
-          env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs, DSH_HOST_EXE: process.execPath },
+          env: externalEnv({ DSH_CORPUS_OPEN_FILE: resolved.abs, DSH_HOST_EXE: process.execPath }),
         }, () => {})
         // 系统选择器不会告诉插件用户最终选了哪个程序；监听新启动的进程，
         // 把带该文件路径的进程记成插件级的扩展名默认应用。
@@ -802,7 +812,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
           ].join('\n')
           execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command', watcherScript], {
             windowsHide: true, encoding: 'utf8', maxBuffer: 1024 * 1024,
-            env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs, DSH_HOST_EXE: process.execPath },
+            env: externalEnv({ DSH_CORPUS_OPEN_FILE: resolved.abs, DSH_HOST_EXE: process.execPath }),
           }, (error, stdout) => {
             if (error || !stdout) return
             try {
