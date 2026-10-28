@@ -41,7 +41,7 @@ export const PANEL_PREFIX = '/api/dsh-plugin-corpus'
 function resolveCorpusFile(root, relPath) {
   const rel = String(relPath || '').replace(/\\/g, '/')
   const parts = rel.split('/')
-  if (rel === '' || parts.some((part) => part === '' || part === '..' || part === '.') || !parts.includes('processed')) return null
+  if (rel === '' || parts.some((part) => part === '' || part === '..' || part === '.') || parts.includes('.corpus') || parts.includes('originals')) return null
   const rootAbs = path.resolve(root)
   const abs = path.resolve(rootAbs, rel)
   if (!(abs === rootAbs || abs.startsWith(rootAbs + path.sep))) return null
