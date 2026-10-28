@@ -12,6 +12,7 @@ import path from 'node:path'
 import { SUPPORTED_EXTENSIONS, extractDocument, runWindowsOcr } from './extract.js'
 import { extractFormulaLines, normalizeLatex } from './formulas.js'
 import { collectionNameError, isValidCollectionName } from './collection-name.js'
+import { writeOutline } from './outline.js'
 
 const SUPPORTED = new Set(SUPPORTED_EXTENSIONS)
 const SKIP_DIRS = new Set(['node_modules', '.git', '.corpus', '.dsh-knowledge', '__pycache__', '.svn', '.hg'])
@@ -353,6 +354,25 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
             warnings,
           })
           fs.writeFileSync(target, markdown, 'utf8')
+          let outlineInfo = null
+          try {
+            const outline = writeOutline(root, relTarget, {
+              text: markdown,
+              title,
+              collection: job.collection,
+              source,
+              pageCount: extracted.meta && typeof extracted.meta.pages === 'number' ? extracted.meta.pages : 0,
+            })
+            outlineInfo = {
+              status: 'ready',
+              lineCount: outline.lineCount,
+              chapters: outline.chapters.length,
+              sections: outline.chapters.reduce((sum, chapter) => sum + chapter.sections.length, 0),
+            }
+          } catch (outlineError) {
+            outlineInfo = { status: 'failed', error: outlineError instanceof Error ? outlineError.message : String(outlineError) }
+            warnings.push('目录生成失败：' + (outlineError instanceof Error ? outlineError.message : String(outlineError)))
+          }
           try {
             const meta = {
               version: 1,
@@ -369,6 +389,7 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
               formulaCount: formulas.length,
               bytes: extracted.meta && typeof extracted.meta.bytes === 'number' ? extracted.meta.bytes : null,
               warnings,
+              outline: outlineInfo,
             }
             fs.writeFileSync(path.join(folderAbs, '.meta.json'), JSON.stringify(meta, null, 2), 'utf8')
           } catch (metaError) {
@@ -383,6 +404,7 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
             chars: extracted.kind === 'image' ? body.length : text.length,
             aiStructured,
             warnings,
+            outline: outlineInfo,
           })
           job.done += 1
         } catch (error) {

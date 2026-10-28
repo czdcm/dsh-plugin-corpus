@@ -72,13 +72,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 
 ### 主会话工具
 
-模型可以通过 11 个工具使用语料库：
+模型可以通过 13 个工具使用语料库：
 
 | 工具 | 用途 |
 |---|---|
 | `corpus_search` | 在可访问集合中检索 |
 | `corpus_read` | 按路径和行范围读取 processed 文档 |
 | `corpus_list` | 列出集合与文档 |
+| `corpus_catalog` | 返回集合/文档卡片、行数、章节目录摘要 |
+| `corpus_outline` | 返回章节/小节标题、起止行号、摘要；缺失目录时按需生成 |
 | `corpus_reindex` | 启动增量/全量重建 |
 | `corpus_status` | 查看重建/导入任务、索引状态、访问范围 |
 | `corpus_import` | 导入本机文件或已上传文件 |
@@ -102,6 +104,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 └─ .corpus/
    ├─ index/<collection>.sqlite
    ├─ config.json
+   ├─ outlines/<hash>.json  文档结构目录（不进入检索分块）
    ├─ thumbs/
    ├─ import-tmp/
    └─ trash/<时间>/     软删除内容，可手动恢复

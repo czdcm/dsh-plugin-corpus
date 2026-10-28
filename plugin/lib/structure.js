@@ -14,6 +14,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { SUPPORTED_EXTENSIONS, extractDocument } from './extract.js'
 import { collectionNameError, isValidCollectionName } from './collection-name.js'
+import { writeOutline } from './outline.js'
 const MAX_LIST_FILES = 5000
 const DEFAULT_MAX_FILES = 300
 const DEFAULT_MAX_CHARS = 48000
@@ -483,6 +484,25 @@ export function createStructureService({ root, agent, config, log, reindex }) {
       git,
     }) + cleanBody.trim() + '\n'
     fs.writeFileSync(target, markdown, 'utf8')
+    let outlineInfo = null
+    try {
+      const outline = writeOutline(root, relTarget, {
+        text: markdown,
+        title: finalTitle,
+        collection,
+        source: sourceLabel,
+        pageCount: stats && typeof stats.pages === 'number' ? stats.pages : 0,
+      })
+      outlineInfo = {
+        status: 'ready',
+        lineCount: outline.lineCount,
+        chapters: outline.chapters.length,
+        sections: outline.chapters.reduce((sum, chapter) => sum + chapter.sections.length, 0),
+      }
+    } catch (outlineError) {
+      outlineInfo = { status: 'failed', error: outlineError instanceof Error ? outlineError.message : String(outlineError) }
+      warnings.push('目录生成失败：' + (outlineError instanceof Error ? outlineError.message : String(outlineError)))
+    }
     try {
       fs.writeFileSync(path.join(folderAbs, '.meta.json'), JSON.stringify({
         version: 1,
@@ -501,6 +521,7 @@ export function createStructureService({ root, agent, config, log, reindex }) {
         git,
         sessionId,
         warnings,
+        outline: outlineInfo,
       }, null, 2), 'utf8')
     } catch (error) {
       warnings.push(`元数据写入失败：${error instanceof Error ? error.message : String(error)}`)
@@ -527,6 +548,7 @@ export function createStructureService({ root, agent, config, log, reindex }) {
       git,
       stats,
       warnings,
+      outline: outlineInfo,
       reindexJobId,
       body: cleanBody,
       chars: cleanBody.length,

@@ -1,6 +1,6 @@
 // dsh-plugin-corpus v1.5 — 插件入口集成测试（Cordis 桩）。
 //
-// 目的：验证 plugin/lib/index.js 的 apply() 真的能把 10 个工具、systemPrompt 注入、
+// 目的：验证 plugin/lib/index.js 的 apply() 真的能把 13 个工具、systemPrompt 注入、
 // webServer 18 条路由挂起来，并用临时语料跑通「自动建索引 → 检索 → 读取 → 导入 → 异步重建
 // → corpus_ingest 摄取 → v1.4 corpus_structure / corpus_summarize_session 主会话接口
 // → v1.5 /settings 根目录 API」的工具闭环。
@@ -144,7 +144,7 @@ try {
     deriveMessages() {
       return [
         { role: 'user', content: [{ type: 'text', text: '请把这次 mount 测试总结进语料' }], source: { kind: 'user' } },
-        { role: 'assistant', content: [{ type: 'text', text: '已完成 10 个工具与 18 条路由的挂载验证' }] },
+        { role: 'assistant', content: [{ type: 'text', text: '已完成 13 个工具与 18 条路由的挂载验证' }] },
       ]
     },
   }
@@ -156,18 +156,18 @@ try {
   const fake = makeCtx(home, path.join(temp, 'profile'), sessions, fakeLlm)
   const disposer = apply(fake.ctx, { corpusRoot: root, promptOrder: 9000, maxPromptFiles: 12 })
   assert(typeof disposer === 'function', 'apply 返回 disposer')
-  assert(fake.tools.size === 11, '注册 11 个工具，实际 ' + fake.tools.size)
-  for (const name of ['corpus_search', 'corpus_read', 'corpus_list', 'corpus_reindex', 'corpus_status', 'corpus_import', 'corpus_ingest', 'corpus_access', 'corpus_structure', 'corpus_summarize_session', 'corpus_delete']) {
+  assert(fake.tools.size === 13, '注册 13 个工具，实际 ' + fake.tools.size)
+  for (const name of ['corpus_search', 'corpus_read', 'corpus_list', 'corpus_catalog', 'corpus_outline', 'corpus_reindex', 'corpus_status', 'corpus_import', 'corpus_ingest', 'corpus_access', 'corpus_structure', 'corpus_summarize_session', 'corpus_delete']) {
     assert(fake.tools.has(name), '缺少工具 ' + name)
   }
-  ok('apply 注册 11 个工具（v1.3 的 8 + v1.4 的 corpus_structure / corpus_summarize_session）')
+  ok('apply 注册 13 个工具（目录/行号目录 + v1.3/v1.4 工具）')
 
   assert(fake.routes.length === 18, '注册 18 条面板路由，实际 ' + fake.routes.length)
   assert(fake.routes.every((route) => route.kind === 'exact' && route.path.startsWith('/api/dsh-plugin-corpus/')), '面板路由形状')
   for (const suffix of ['access', 'import/targets', 'import', 'import/status', 'app-icon', 'settings', 'settings/root', 'settings/open', 'gallery', 'delete']) {
     assert(fake.routes.some((route) => route.path === '/api/dsh-plugin-corpus/' + suffix), '缺少路由 ' + suffix)
   }
-  ok('apply 挂载 19 条 /api/dsh-plugin-corpus 路由（含 /access、v1.3 /import/*）')
+  ok('apply 挂载 18 条 /api/dsh-plugin-corpus 路由（含 /access、v1.3 /import/*）')
 
   const invokePanel = (method, url, body, headers = {}) => new Promise((resolve, reject) => {
     const route = fake.routes.find((item) => item.path === url.split('?')[0])
@@ -254,6 +254,14 @@ try {
   assert(read.ok === true && read.text.includes('hello'), 'corpus_read')
   ok('corpus_read 按行读取')
 
+  const catalogResult = await call('corpus_catalog', {})
+  assert(catalogResult.ok === true && catalogResult.collections[0].name === 'alpha' && catalogResult.collections[0].documents.length >= 2, 'corpus_catalog')
+  const firstDoc = catalogResult.collections[0].documents[0]
+  const outlineResult = await call('corpus_outline', { path: firstDoc.path })
+  assert(outlineResult.ok === true && outlineResult.lineCount > 0 && Array.isArray(outlineResult.chapters) && outlineResult.chapters.length > 0, 'corpus_outline')
+  assert(outlineResult.chapters[0].startLine >= 1 && outlineResult.chapters[0].endLine >= outlineResult.chapters[0].startLine, 'outline 行号范围')
+  ok('corpus_catalog + corpus_outline 返回文档卡片与行号目录')
+
   const imported = await call('corpus_import', { path: 'docs/imported.md', collection: 'alpha' })
   assert(imported.ok === true && imported.imported === 1 && imported.jobId !== null, 'corpus_import')
   await waitIdle()
@@ -288,7 +296,10 @@ try {
   assert(fs.existsSync(path.join(root, ...ingestItem.target.split('/'))), 'processed Markdown 应落盘')
   assert(!fs.existsSync(path.join(root, 'alpha', ingestItem.folder, 'originals')), '不应创建 originals/')
   assert(fs.existsSync(path.join(root, 'alpha', ingestItem.folder, '.meta.json')), '导入文件夹应有 .meta.json')
-  ok('corpus_ingest 布局：每导入一文件夹（processed/ + .meta.json，不保存源文件）')
+  assert(ingestItem.outline && ingestItem.outline.status === 'ready' && ingestItem.outline.lineCount > 0, '导入时应生成 outline：' + JSON.stringify(ingestItem.outline))
+  const outlineForIngest = await call('corpus_outline', { path: ingestItem.target })
+  assert(outlineForIngest.ok === true && outlineForIngest.chapters.length > 0, '导入的 outline 应可读取')
+  ok('corpus_ingest 布局：每导入一文件夹（processed/ + .meta.json + outline，不保存源文件）')
   await waitIdle()
   ok('corpus_ingest：相对工作区导入 → 后台任务 running→done → 自动重建')
 
@@ -306,6 +317,7 @@ try {
   assert(fs.existsSync(path.join(root, ...structured.target.split('/'))), 'corpus_structure processed Markdown 应落盘')
   assert(structured.original === undefined, 'corpus_structure 不再保存原件：' + structured.original)
   assert(typeof structured.reindexJobId === 'string' && structured.reindexJobId !== '', 'corpus_structure 应触发重建并返回 reindexJobId')
+  assert(structured.outline && structured.outline.status === 'ready', 'corpus_structure 应生成 outline：' + JSON.stringify(structured.outline))
   assert(String(structured.body).includes('# 集成结构化结果'), 'corpus_structure 应同步返回结构化 Markdown body')
   await waitIdle()
   const foundStructured = await call('corpus_search', { query: '集成结构化结果' })
@@ -331,6 +343,7 @@ try {
 
   const prompt = fake.promptContexts[0].text({ agent: exec.agent })
   assert(typeof prompt === 'string' && prompt.includes('alpha') && prompt.includes('corpus_status') && prompt.includes('corpus_import'), 'prompt 文本')
+  assert(prompt.includes('corpus_catalog') && prompt.includes('corpus_outline'), 'systemPrompt 应包含目录/行号目录工具约定')
   assert(prompt.includes('corpus_structure') && prompt.includes('corpus_summarize_session'), 'systemPrompt 应含 v1.4 两个新工具的约定')
   assert(prompt.includes('git clone/pull') || prompt.includes('clone/pull'), 'systemPrompt 应提示仓库先 clone/pull 再 corpus_structure')
   ok('systemPrompt 文本含授权集合 + v1.4 两个新工具约定')

@@ -44,7 +44,7 @@ Write-Host '== v1.1/v1.2/v1.3 验收（临时语料） =='
 if ($LASTEXITCODE -ne 0) { throw 'test-corpus-v2.mjs 失败' }
 
 Write-Host ''
-Write-Host '== 策略/权限/19 路由 =='
+Write-Host '== 策略/权限/18 路由 =='
 & $Node tests\test-policy.mjs
 if ($LASTEXITCODE -ne 0) { throw 'test-policy.mjs 失败' }
 
@@ -89,7 +89,12 @@ Write-Host '== v1.7 删除语料（软删除/trash） =='
 if ($LASTEXITCODE -ne 0) { throw 'test-trash.mjs 失败' }
 
 Write-Host ''
-Write-Host '== 插件入口集成（Cordis 桩，11 工具/18 路由） =='
+Write-Host '== 文档目录索引（outline / 行号） =='
+& $Node tests\test-outline.mjs
+if ($LASTEXITCODE -ne 0) { throw 'test-outline.mjs 失败' }
+
+Write-Host ''
+Write-Host '== 插件入口集成（Cordis 桩，13 工具/18 路由） =='
 & $Node tests\test-plugin-mount.mjs
 if ($LASTEXITCODE -ne 0) { throw 'test-plugin-mount.mjs 失败' }
 
@@ -99,4 +104,4 @@ Write-Host '== 客户端 bundle 静态验证 =='
 if ($LASTEXITCODE -ne 0) { throw 'test-client-bundle.mjs 失败' }
 
 Write-Host ''
-Write-Host '全部本地验收通过。部署并重启 DSH 后：左侧栏「语料库」（含导入区/语料文件列表/删除回收站）、右栏「语料权限」，主会话可调用 corpus_structure / corpus_summarize_session / corpus_delete。'
+Write-Host '全部本地验收通过。部署并重启 DSH 后：左侧栏「语料库」（含导入区/语料文件列表/删除回收站）、右栏「语料权限」，主会话可调用 corpus_catalog / corpus_outline / corpus_search / corpus_read / corpus_structure 等工具。'

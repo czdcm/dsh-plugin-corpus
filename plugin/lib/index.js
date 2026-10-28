@@ -24,6 +24,7 @@ import {
 } from './engine.js'
 import { createJobRunner } from './jobs.js'
 import { createPanelRoutes, PANEL_PREFIX } from './panel.js'
+import { catalog as buildCatalog, ensureOutline, writeOutline } from './outline.js'
 import { createIngestAgent } from './ingest-agent.js'
 import { createIngestManager } from './ingest.js'
 import { createStructureService } from './structure.js'
@@ -38,6 +39,7 @@ export const Config = Schema.object({
   corpusRoot: Schema.string().default(''),
   promptOrder: Schema.number().min(1).max(99999).default(9000),
   maxPromptFiles: Schema.number().min(0).max(60).default(12),
+  maxPromptChars: Schema.number().min(1000).max(40000).default(8000),
   ingestProvider: Schema.string().default(''),
   ingestModel: Schema.string().default(''),
   ingestVisionProvider: Schema.string().default(''),
@@ -78,6 +80,7 @@ export function apply(ctx, config) {
   const root = expandRoot(config.corpusRoot, dshHome)
   const promptOrder = Number(config.promptOrder) || 9000
   const maxPromptFiles = Number(config.maxPromptFiles) || 0
+  const maxPromptChars = Number(config.maxPromptChars) || 8000
   const jobs = createJobRunner({ root })
   const ingestAgent = createIngestAgent({ ctx, config, log })
   const ingest = createIngestManager({ root, dshHome, reindex: jobs, agent: ingestAgent, config, log })
@@ -191,6 +194,71 @@ export function apply(ctx, config) {
   }))
 
   ctx.tools.register(defineTool({
+    name: 'corpus_catalog',
+    description: '查看当前会话可访问的语料目录：集合、文档卡片、行数、章节/小节数量、摘要与关键词。先用它判断哪篇文档相关，再用 corpus_outline 查看第几行有什么，最后 corpus_read 读原文。',
+    parameters: {
+      collection: { type: 'string', description: '只看某个集合' },
+      limit: { type: 'number', description: '每个集合最多返回多少文档，默认 200' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+    async execute(args, exec) {
+      const scope = scopeOf(exec && exec.agent)
+      const names = namesFor(scope, args)
+      return JSON.stringify(buildCatalog(root, names, { limit: args && args.limit }))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'corpus_outline',
+    description: '查看一篇语料的结构化目录：章节/小节标题、起止行号、摘要、关键词。用它定位“第几行有什么”，再用 corpus_read 读对应行。文档没有目录时会在本次调用中生成。',
+    parameters: {
+      path: { type: 'string', required: true, description: '语料相对路径，来自 corpus_catalog / corpus_search / corpus_list' },
+      depth: { type: 'number', description: '1 只看章，2 包含小节；默认 2' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+    async execute(args, exec) {
+      const scope = scopeOf(exec && exec.agent)
+      const rel = String((args && args.path) || '').replace(/\\/g, '/')
+      if (!scope.allow(rel)) throw new Error(`没有访问 ${rel} 的权限`)
+      const outline = ensureOutline(root, rel, { title: path.basename(rel).replace(/\.[^.]+$/, '') })
+      if (outline === null) {
+        return JSON.stringify({ ok: false, error: '无法生成目录；请确认该文件是 processed 下的文本文件', path: rel })
+      }
+      const depth = Math.max(1, Math.min(3, Number(args && args.depth) || 2))
+      const compact = {
+        ok: true,
+        path: outline.processedPath,
+        title: outline.title,
+        lineCount: outline.lineCount,
+        pageCount: outline.pageCount,
+        generatedAt: outline.generatedAt,
+        generator: outline.generator,
+        summary: outline.summary || '',
+        chapters: outline.chapters.map((chapter) => ({
+          number: chapter.number,
+          title: chapter.title,
+          startLine: chapter.startLine,
+          endLine: chapter.endLine,
+          summary: chapter.summary || chapter.abstract || '',
+          keywords: chapter.keywords || [],
+          sections: depth >= 2
+            ? (chapter.sections || []).map((section) => ({
+              number: section.number,
+              title: section.title,
+              startLine: section.startLine,
+              endLine: section.endLine,
+              page: section.page,
+              summary: section.summary || section.preview || '',
+            }))
+            : [],
+        })),
+        hint: '用 corpus_read（path + from + lines）读取目录给出的行号范围。',
+      }
+      return JSON.stringify(compact)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'corpus_reindex',
     description: '启动语料索引的后台重建（增量；force=true 全部重切）。立即返回任务 id，用 corpus_status 查看进度；同一时刻只跑一个任务。',
     parameters: {
@@ -291,6 +359,11 @@ export function apply(ctx, config) {
         move: args.move === true,
         extensions,
       })
+      const outlineErrors = []
+      for (const rel of (Array.isArray(result.files) ? result.files : []).slice(0, 200)) {
+        try { writeOutline(root, rel, { collection }) } catch (error) { outlineErrors.push(`${rel}: ${error instanceof Error ? error.message : String(error)}`) }
+      }
+      if (outlineErrors.length > 0) result.outlineErrors = outlineErrors.slice(0, 10)
       let job = null
       let indexHint = '已导入；未启动重建（index=false），需要时调用 corpus_reindex。'
       if (args.index !== false) {
@@ -412,6 +485,7 @@ export function apply(ctx, config) {
         git: result.git || null,
         stats: result.stats || null,
         warnings: Array.isArray(result.warnings) ? result.warnings : [],
+        outline: result.outline || null,
         reindexJobId: result.reindexJobId || null,
         chars: result.chars || body.length,
         body: truncated ? body.slice(0, limit) + '\n\n[工具输出已截断；完整内容用 corpus_read 读 target]' : body,
@@ -487,6 +561,7 @@ export function apply(ctx, config) {
         transcript: transcript.stats,
         stats: result.stats || null,
         warnings: [...transcript.warnings, ...(Array.isArray(result.warnings) ? result.warnings : [])],
+        outline: result.outline || null,
         reindexJobId: result.reindexJobId || null,
         chars: result.chars || body.length,
         body: truncated ? body.slice(0, limit) + '\n\n[工具输出已截断；完整内容用 corpus_read 读 target]' : body,
@@ -558,12 +633,12 @@ export function apply(ctx, config) {
     },
   }))
 
-  // ---- 提示词：只列有权限的集合 ----
+  // ---- 提示词：集合 + 文档卡片 + 目录工具约定 ----
   const summaries = new Map()
   const promptText = (agent) => {
     const scope = scopeOf(agent)
     if (scope.names.length === 0) return ''
-    const key = [normalize(scope.subject.workspace), scope.subject.session, scope.names.join(',')].join('|')
+    const key = [normalize(scope.subject.workspace), scope.subject.session, scope.names.join(','), maxPromptFiles, maxPromptChars].join('|')
     const hit = summaries.get(key)
     if (hit && Date.now() - hit.at < 15000) return hit.text
     let text = ''
@@ -571,18 +646,33 @@ export function apply(ctx, config) {
       const listed = listDocs(root, { collections: scope.names, limit: 1000 })
       if (listed.total > 0) {
         const parts = listed.collections.map((collection) => `${collection.name}（${collection.docs} 篇）`).join('、')
-        const files = listed.collections.flatMap((collection) => collection.files)
-        const titles = files.slice(0, maxPromptFiles).map((file) => file.title).join('、')
-        const more = files.length > maxPromptFiles ? ` 等 ${files.length} 篇` : ''
-        text = [
-          `本工作区可访问语料库：${parts}。`,
-          titles ? `文档：${titles}${more}。` : '',
+        const cards = maxPromptFiles > 0
+          ? buildCatalog(root, scope.names, { limit: Math.max(1, maxPromptFiles) })
+          : { collections: [] }
+        const documents = cards.collections.flatMap((collection) => collection.documents || [])
+        const lines = [`本工作区可访问语料库：${parts}。`]
+        if (documents.length > 0) {
+          lines.push('', '文档卡片（先用 corpus_catalog 查看完整目录；需要章节/行号时用 corpus_outline）：')
+          for (const document of documents.slice(0, maxPromptFiles)) {
+            const shape = document.lineCount
+              ? `（${document.lineCount} 行，${document.chapters || 0} 章 ${document.sections || 0} 节）`
+              : ''
+            const summary = document.summary ? `：${String(document.summary).slice(0, 180)}` : ''
+            lines.push(`- ${document.path}｜${document.title}${shape}${summary}`)
+          }
+          const more = listed.total > documents.length ? `（当前只展示前 ${maxPromptFiles} 篇，其余用 corpus_catalog 查看）` : ''
+          if (more) lines.push(`- ${more}`)
+        }
+        lines.push(
           '',
-          '检索约定：',
-          '- 问题涉及这些文档的具体内容（配置项、接口、实现细节、原文出处）时，先 `corpus_search` 检索，再 `corpus_read` 按行读原文；不要凭记忆复述。',
-          '- 检索用关键词而不是整句；命中后按 path 与行号引用。',
-          '- 找不到就换同义词再搜；索引为空时先 `corpus_reindex`（后台任务，随后用 `corpus_status` 看进度）；新增语料用 `corpus_import` 导入。',
-        ].filter((line) => line !== '').join('\n')
+          '目录与读取约定：',
+          '- 用户问题涉及这些文档的领域、规范、教材、配置、接口或原文时，先用 `corpus_catalog` 找文档，再用 `corpus_outline` 看章节和起止行号，最后 `corpus_read` 读对应行；不要只凭标题或记忆回答。',
+          '- 目录里没有 outline 的文档，调用 `corpus_outline({path})` 生成后再读；不要假装看过没有读过的内容。',
+          '- 关键词检索用 `corpus_search`；用关键词而不是整句，命中后按 path 与行号引用。',
+          '- 索引为空时先 `corpus_reindex`（后台任务，用 `corpus_status` 看进度）；新增语料用 `corpus_import` 导入。',
+        )
+        text = lines.join('\n')
+        if (text.length > maxPromptChars) text = text.slice(0, Math.max(1000, maxPromptChars - 20)) + '\n…（目录已截断，用 corpus_catalog 查看完整目录）'
       } else {
         text = '本工作区配置了可访问的语料集合，但索引还没建：需要查文档时先调用 `corpus_reindex`（后台任务，用 `corpus_status` 看进度）。'
       }
@@ -595,6 +685,7 @@ export function apply(ctx, config) {
     summaries.set(key, { at: Date.now(), text })
     return text
   }
+
 
   if (typeof ctx.inject === 'function') {
     ctx.inject(['systemPrompt'], (scope) => {

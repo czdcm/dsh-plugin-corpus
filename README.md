@@ -10,7 +10,7 @@
 
 - **文件即语料**：每个集合是一级目录，整个语料根可复制、备份或迁移。
 - **每个集合一份 SQLite 索引**：可增量/全量重建；索引可随时从文件重新生成。
-- **11 个模型工具**：检索、读取、列表、重建、状态、导入、摄取、仓库/内容结构化、会话总结、删除、权限检查。
+- **13 个模型工具**：检索、读取、列表、目录卡片、章节/行号目录、重建、状态、导入、摄取、仓库/内容结构化、会话总结、删除、权限检查。
 - **批量导入**：浏览器一次选择多个文件；本机路径支持多行文件/目录，目录递归扫描；同一批全部进入同一个集合。
 - **公式保留**：HTML MathML、Word/PowerPoint 内嵌 OMML、常见 Unicode 数学符号和已有 LaTeX 统一规范成 `$...$` / `$$...$$`；PDF 的公式行也会保留并尽可能转成 LaTeX 公式块。
 - **文档导入**：Markdown、纯文本、HTML、CSV、PDF、DOCX、XLSX、PPTX 和常见图片；每次导入只写 `processed/`（供模型读）；源文件由用户自行管理。
@@ -79,6 +79,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 └─ .corpus/
    ├─ index/<集合>.sqlite
    ├─ config.json
+   ├─ outlines/<hash>.json  文档结构目录（不进入检索分块）
    ├─ thumbs/
    ├─ import-tmp/
    └─ trash/            软删除内容，可手动恢复
@@ -93,6 +94,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 | `corpus_search` | 在可访问集合中检索 |
 | `corpus_read` | 按路径和行范围读取 processed 文档 |
 | `corpus_list` | 列出集合和文档 |
+| `corpus_catalog` | 返回集合/文档卡片、行数、章节目录摘要 |
+| `corpus_outline` | 返回章节/小节标题、起止行号、摘要；缺失目录时按需生成 |
 | `corpus_reindex` | 启动增量/全量重建 |
 | `corpus_status` | 查看重建/导入任务、索引状态、访问范围 |
 | `corpus_import` | 导入本机文件或上传文件 |
