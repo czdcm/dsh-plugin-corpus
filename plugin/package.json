@@ -35,6 +35,55 @@
     "lib",
     "vendor",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/czdcm/dsh-plugin-corpus.git"
+  },
+  "homepage": "https://github.com/czdcm/dsh-plugin-corpus",
+  "bugs": {
+    "url": "https://github.com/czdcm/dsh-plugin-corpus/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "knowledge-base",
+    "local-knowledge-base",
+    "personal-knowledge-base",
+    "knowledge-management",
+    "document-search",
+    "file-search",
+    "full-text-search",
+    "document-retrieval",
+    "knowledge-retrieval",
+    "document-index",
+    "document-import",
+    "document-parser",
+    "reference-library",
+    "research",
+    "pdf",
+    "pdf-extraction",
+    "docx",
+    "pptx",
+    "xlsx",
+    "office",
+    "ocr",
+    "markdown",
+    "text-extraction",
+    "rag",
+    "ai-context",
+    "llm-context",
+    "知识库",
+    "本地知识库",
+    "文档检索",
+    "文件搜索",
+    "全文检索",
+    "资料库",
+    "文档导入",
+    "文档解析"
   ]
 }
