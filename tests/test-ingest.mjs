@@ -8,7 +8,7 @@
  * v1.3 最终目录布局（每个导入文件一个独立文件夹）：
  *   <root>/<collection>/[<prefix>/]<YYYYMMDD-HHmmss>-<源文件slug>/
  *     ├ originals/<原文件名>        （所有格式都保留原件）
- *     ├ processed/<标题slug>.md     （front matter: title/source/format/importedAt/collection/original/aiStructured）
+ *     ├ processed/<源文件名>.md      （front matter: title/source/format/importedAt/collection/original/aiStructured）
  *     └ .meta.json                  （source/original/processed/title/format/mediaType/importedAt/aiStructured/bytes/warnings）
  *
  * 覆盖：目录导入、每文件文件夹布局、原件入档、.meta.json、front matter、items[].target/original/folder、
@@ -174,7 +174,7 @@ try {
   const readmeFolder = folderOfTarget(readmeItem.target)
   assert(FOLDER_RE.test(readmeFolder) && readmeFolder.endsWith('-readme'), '文件夹名应为 <stamp>-readme，实际 ' + readmeFolder)
   assert(readmeItem.folder === readmeFolder, 'items[].folder 应与路径中的文件夹一致')
-  assert(readmeItem.target === `docs/inbox/${readmeFolder}/processed/AI-结构化标题.md`, 'items[].target 应指向 processed/<标题slug>.md，实际 ' + readmeItem.target)
+  assert(readmeItem.target === `docs/inbox/${readmeFolder}/processed/readme.md`, 'items[].target 应使用源文件名词干，实际 ' + readmeItem.target)
   assert(fs.existsSync(absOf(readmeItem.target)), 'processed Markdown 应落盘：' + absOf(readmeItem.target))
   assert(!fs.existsSync(absOf(`docs/inbox/${readmeFolder}/originals`)), '不应再创建 originals/ 目录')
   assert(readmeItem.original === undefined, 'items[] 不应再返回 original')
@@ -246,7 +246,7 @@ try {
   assert(uploadAgent.calls.length === 0, 'ai:false 时不应调用 agent.structure')
   const uploadItem = uploadDone.items[0]
   assert(uploadItem.aiStructured === false, 'ai:false 时 item.aiStructured=false')
-  assert(/^uploads\/zone\/\d{8}-\d{6}-upload\/processed\/Upload-One\.md$/.test(uploadItem.target), 'target 应为 uploads/zone/<stamp>-upload/processed/Upload-One.md，实际 ' + uploadItem.target)
+  assert(/^uploads\/zone\/\d{8}-\d{6}-upload\/processed\/upload\.md$/.test(uploadItem.target), 'target 应为 uploads/zone/<stamp>-upload/processed/upload.md，实际 ' + uploadItem.target)
   assert(uploadItem.original === undefined, 'uploads 不再返回 original')
   assert(!fs.existsSync(absOf(`uploads/zone/${uploadItem.folder}/originals`)), 'uploads 不创建 originals/')
   const uploadDoc = readFrontMatter(absOf(uploadItem.target))
@@ -274,7 +274,7 @@ try {
   const prefixDone = await waitIngest(prefixManager, prefixStarted.job.id)
   const prefixTarget = prefixDone.items[0].target
   assert(prefixDone.state === 'done', 'prefix 导入应成功')
-  assert(/^docs\/win\/sub\/\d{8}-\d{6}-prefixed\/processed\/Prefixed-Doc\.md$/.test(prefixTarget), '反斜杠/绝对前缀应归一为集合内相对路径，实际 ' + prefixTarget)
+  assert(/^docs\/win\/sub\/\d{8}-\d{6}-prefixed\/processed\/prefixed\.md$/.test(prefixTarget), '反斜杠/绝对前缀应归一为集合内相对路径，实际 ' + prefixTarget)
   assert(path.resolve(root, ...prefixTarget.split('/')).startsWith(path.resolve(root, 'docs') + path.sep), 'prefix 写入必须落在 <root>/<collection>/ 内')
   ok('prefix 归一：反斜杠与绝对前缀不越界（落在 <root>/<collection>/）')
 

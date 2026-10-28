@@ -360,11 +360,14 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
         if (aiTitle) title = aiTitle[1].trim().slice(0, 160) || title
 
         job.current = { source: display, stage: 'write', index: index + 1, total: all.length }
-        const slug = slugOf(title, path.basename(file, path.extname(file)))
-        let target = path.join(processedDir, slug + '.md')
+        // 产物文件名跟随源文件名（保留中文/空格，只替换 Windows 非法字符），
+        // 便于用户按源文件管理；AI 标题仍写进 front matter / 正文标题。
+        const sourceStem = path.basename(source, path.extname(source))
+        const targetBase = safeName(sourceStem)
+        let target = path.join(processedDir, targetBase + '.md')
         let counter = 2
         while (fs.existsSync(target)) {
-          target = path.join(processedDir, `${slug}-${counter}.md`)
+          target = path.join(processedDir, `${targetBase}-${counter}.md`)
           counter += 1
         }
         const relTarget = path.relative(root, target).replace(/\\/g, '/')
