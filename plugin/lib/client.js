@@ -348,6 +348,8 @@
           galleryPickAppCancel: '取消',
           galleryPickAppEmpty: '没有检测到常见编辑器，可手动输入 .exe 路径。',
           galleryPickAppFailed: '设置默认应用失败：',
+          galleryPickDefault: '选择默认应用（记住）…',
+          galleryPickSystem: '使用系统软件选择器…',
           galleryNoDocs: '还没有可展示的语料；用「导入语料」或在主会话里调用 corpus_structure 后，这里会出现文件列表。',
           reindexHelpTitle: '重建按钮说明',
           reindexHelpIntro: '两个按钮都会重建当前有权限集合的索引，但成本不同：',
@@ -637,6 +639,8 @@
           galleryPickAppCancel: 'Cancel',
           galleryPickAppEmpty: 'No common editors detected; enter an .exe path manually.',
           galleryPickAppFailed: 'Could not set default app: ',
+          galleryPickDefault: 'Choose default app (remember)…',
+          galleryPickSystem: 'Use system app picker…',
           galleryNoDocs: 'No corpus documents yet. Import files or call corpus_structure in the main session, then files will appear here.',
           reindexHelpTitle: 'Rebuild button help',
           reindexHelpIntro: 'Both buttons rebuild indexes for collections you can access, with different costs:',
@@ -1556,8 +1560,25 @@
           const target = openerState
           postJson(API.openExternal, { path: target.path, app: appPath, appName: appName || '' }).then(() => {
             setOpenerState(null)
+            try {
+              setTimeout(() => window.dispatchEvent(new CustomEvent('dsh-corpus-icons-changed')), 500)
+            } catch { /* 图标刷新失败不影响打开 */ }
           }).catch((error) => {
             setOpenerState((prev) => prev === null ? prev : ({ ...prev, error: t.galleryPickAppFailed + errorText(error) }))
+          })
+        }
+
+        const openMainItem = (item) => {
+          setMenuPath(null)
+          const ext = extensionOf(item.path)
+          getJson(API.openers + '?ext=' + encodeURIComponent(ext)).then((body) => {
+            if (body && body.current && typeof body.current.path === 'string') {
+              if (typeof props.onExternal === 'function') props.onExternal(item, 'default')
+            } else {
+              openOpenerPicker(item)
+            }
+          }).catch(() => {
+            if (typeof props.onExternal === 'function') props.onExternal(item, 'default')
           })
         }
 
@@ -1607,7 +1628,7 @@
           key: item.path,
           role: 'row',
           title: item.path,
-          onClick: () => { if (typeof props.onExternal === 'function') props.onExternal(item, 'default') },
+          onClick: () => openMainItem(item),
           style: {
             display: 'grid',
             gridTemplateColumns: `${34 + 18 + Math.max(0, depth) * 18}px minmax(160px, 1fr) 74px 82px 128px 174px`,
@@ -1635,8 +1656,7 @@
                 title: t.externalOpen,
                 onClick: (event) => {
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
-                  setMenuPath(null)
-                  if (typeof props.onExternal === 'function') props.onExternal(item, 'default')
+                  openMainItem(item)
                 },
               }, '📂 ' + t.externalOpen),
               h('button', {
@@ -1659,7 +1679,15 @@
                 boxShadow: '0 6px 18px rgba(0,0,0,0.28)',
               },
             },
-              h('div', { style: { ...SMALL, padding: '2px 6px 5px', color: 'var(--dsw-alias-label-secondary)' } }, t.galleryChooseWith),
+              h('button', {
+                type: 'button',
+                style: { ...BTN, display: 'block', width: '100%', textAlign: 'left', fontSize: '11px', marginBottom: '4px' },
+                onClick: (event) => {
+                  if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
+                  setMenuPath(null)
+                  openOpenerPicker(item)
+                },
+              }, '⚙️ ' + t.galleryPickDefault),
               h('button', {
                 type: 'button',
                 style: { ...BTN, display: 'block', width: '100%', textAlign: 'left', fontSize: '11px' },
@@ -1668,7 +1696,7 @@
                   setMenuPath(null)
                   if (typeof props.onExternal === 'function') props.onExternal(item, 'choose')
                 },
-              }, '📂 ' + t.galleryChooseWith + '…'),
+              }, '📂 ' + t.galleryPickSystem),
             ) : null,
             h(DeleteButton, {
               key: 'delete-row',
