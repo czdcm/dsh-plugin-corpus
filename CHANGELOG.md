@@ -2,6 +2,18 @@
 
 本文件记录 `dsh-plugin-corpus` 的对外版本变化。
 
+## 1.3.1 — 2026-10-28
+
+### 发布自动化
+
+- 增加 GitHub Actions `.github/workflows/publish.yml`：GitHub Release 发布后自动恢复 vendor 二进制并执行 `npm publish --provenance`。
+- 配置 npm Trusted Publisher（GitHub Actions + `publish.yml`），不再依赖长期 bypass-2FA token。
+- 本版本内容与 1.3.0 相同，作为 Trusted Publisher 的首次验证发布。
+
+### 验证
+
+- 全量 `tools/test-all.ps1` 通过；客户端静态验证 388/388。
+
 ## 1.3.0 — 2026-10-28
 
 ### 导入稳定性
