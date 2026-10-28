@@ -38,6 +38,7 @@ import { deleteCollection, deleteDocument } from './trash.js'
 export { policySummary }
 
 export const PANEL_PREFIX = '/api/dsh-plugin-corpus'
+const iconCache = new Map()
 
 function resolveCorpusFile(root, relPath) {
   const rel = String(relPath || '').replace(/\\/g, '/')
@@ -580,6 +581,76 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
       if (req.method !== 'GET') { sendJson(res, 405, { ok: false, error: 'method not allowed' }); return }
       const ext = queryOf(req).get('ext') || ''
       sendJson(res, 200, { ok: true, ...listOpenerApps(root, ext) })
+    }),
+  })
+
+  // 当前文件类型的默认应用图标（用于文件列表的类型图标）。
+  routes.push({
+    kind: 'exact',
+    path: `${PANEL_PREFIX}/app-icon`,
+    handler: guarded(async (req, res) => {
+      if (req.method !== 'GET') { sendJson(res, 405, { ok: false, error: 'method not allowed' }); return }
+      if (process.platform !== 'win32') { sendJson(res, 501, { ok: false, error: '图标只支持 Windows' }); return }
+      const query = queryOf(req)
+      const ext = String(query.get('ext') || '').trim().toLowerCase().replace(/^\./, '')
+      if (!/^[a-z0-9][a-z0-9_.-]{0,15}$/.test(ext)) { sendJson(res, 400, { ok: false, error: '非法扩展名' }); return }
+      const version = String(query.get('v') || '')
+      const cacheKey = ext + '|' + version
+      const cached = iconCache.get(cacheKey)
+      if (cached !== undefined) {
+        res.statusCode = 200
+        res.setHeader('content-type', 'image/png')
+        res.setHeader('content-length', String(cached.length))
+        res.setHeader('cache-control', 'private, max-age=3600')
+        res.end(cached)
+        return
+      }
+      const powershell = findPowerShell()
+      if (powershell === null) { sendJson(res, 501, { ok: false, error: 'Windows PowerShell 不可用' }); return }
+      const mapped = openerFor(root, 'x.' + ext)
+      const script = [
+        '$ErrorActionPreference = "Stop"',
+        '$app = $env:DSH_ICON_APP',
+        '$ext = $env:DSH_ICON_EXT',
+        'if (-not $app) {',
+        '  $prog = $null',
+        '  if ($ext) {',
+        '    $choice = Get-ItemProperty -LiteralPath ("HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\" + $ext + "\\UserChoice") -ErrorAction SilentlyContinue',
+        '    if ($choice -and $choice.ProgId) { $prog = $choice.ProgId }',
+        '    if (-not $prog) { $prog = (Get-ItemProperty -LiteralPath ("Registry::HKEY_CLASSES_ROOT\\" + $ext) -ErrorAction SilentlyContinue)."(default)" }',
+        '  }',
+        '  if ($prog) {',
+        '    $cmd = (Get-ItemProperty -LiteralPath ("Registry::HKEY_CLASSES_ROOT\\" + $prog + "\\shell\\open\\command") -ErrorAction SilentlyContinue)."(default)"',
+        '    if ($cmd) {',
+        '      if ($cmd -match \'^\\s*"([^"]+)"\') { $app = $matches[1] }',
+        '      elseif ($cmd -match \'^\\s*(\\S+)\') { $app = $matches[1] }',
+        '    }',
+        '  }',
+        '}',
+        'if (-not $app -or -not (Test-Path -LiteralPath $app)) { exit 2 }',
+        'Add-Type -AssemblyName System.Drawing',
+        '$icon = [System.Drawing.Icon]::ExtractAssociatedIcon($app)',
+        'if (-not $icon) { exit 3 }',
+        '$bmp = $icon.ToBitmap()',
+        '$ms = New-Object System.IO.MemoryStream',
+        '$bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)',
+        '[Convert]::ToBase64String($ms.ToArray())',
+      ].join('\n')
+      const result = await new Promise((resolve) => {
+        execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+          encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, windowsHide: true,
+          env: { ...process.env, DSH_ICON_EXT: "." + ext, DSH_ICON_APP: mapped ? mapped.path : '' },
+        }, (error, stdout) => resolve({ error, stdout: String(stdout || '').trim() }))
+      })
+      if (result.error || result.stdout === '') { sendJson(res, 404, { ok: false, error: '没有可用的默认应用图标' }); return }
+      const buffer = Buffer.from(result.stdout, 'base64')
+      if (buffer.length === 0) { sendJson(res, 404, { ok: false, error: '图标为空' }); return }
+      iconCache.set(cacheKey, buffer)
+      res.statusCode = 200
+      res.setHeader('content-type', 'image/png')
+      res.setHeader('content-length', String(buffer.length))
+      res.setHeader('cache-control', 'private, max-age=3600')
+      res.end(buffer)
     }),
   })
 

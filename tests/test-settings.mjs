@@ -52,7 +52,7 @@ try {
 
   // 面板 GET /settings 用 state 中的新根目录显示，且 API 形状可被前端消费。
   const routes = createPanelRoutes({ root: root1, dshHome, jobs: { status: () => ({ active: null, recent: [] }) }, sessionLookup: () => null, ingest: { status: () => ({ active: null, recent: [] }), limits: { maxFiles: 200, maxUploadBytes: 1024 } } })
-  assert(routes.length === 18, '面板路由 17 条，实际 ' + routes.length)
+  assert(routes.length === 19, '面板路由 19 条，实际 ' + routes.length)
   const route = routes.find((item) => item.path === '/api/dsh-plugin-corpus/settings')
   assert(route !== undefined, '存在 /settings 路由')
   const result = await new Promise((resolve, reject) => {

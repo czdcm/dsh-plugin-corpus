@@ -18,7 +18,7 @@
 - **内置小代理**：固定提示词、单轮后台调用，不污染主会话；明确要求公式输出 LaTeX。
 - **主会话接口**：把克隆的仓库或当前会话总结成语料。
 - **Web 面板**：左侧栏语料库页面（导入、检索、文件列表、集合折叠、删除、根目录设置）；检索只负责定位，查看直接用外部软件；文件列表每行提供外部打开按钮。
-- **外部查看**：每行「用外部软件打开」优先用插件按扩展名记住的应用；点 `▾ → 选择软件打开` 首次选择后会记住，之后主按钮直接打开；没有记录时使用 Windows 默认关联/「打开方式」。
+- **外部查看**：每行「用外部软件打开」优先用默认应用打开；点 `▾ → 选择软件打开` 打开 Windows 软件选择器，选中并“始终使用”后主按钮以后直接打开；文件列表的类型图标也会换成该应用图标。
 - **Windows 辅助能力**：内置 OCR，可选 OfficeCLI/pdftotext。
 
 ## 环境要求
@@ -114,7 +114,8 @@ POST /read              POST /reindex           GET  /status
 GET  /access            GET  /import/targets    POST /import
 GET  /import/status     POST /delete            GET  /gallery
 GET  /settings          POST /settings/root     POST /settings/open
-GET  /openers            POST /open-external
+GET  /openers            GET  /app-icon
+POST /open-external
 GET/POST /policy
 ```
 

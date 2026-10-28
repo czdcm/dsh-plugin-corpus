@@ -39,6 +39,7 @@
       const PANEL_ID = 'corpus'
       const NS = 'dsh-corpus'
       const PAGE_LINES = 60
+      const APP_ICON_VERSION = String(Date.now())
       const POLL_MS = 800
       const PERMISSIONS_TAB_ID = 'dsh-plugin-corpus-permissions'
       const PERMISSIONS_KIND = 'corpus-permissions'
@@ -81,6 +82,7 @@
         settingsOpen: '/api/dsh-plugin-corpus/settings/open',
         openExternal: '/api/dsh-plugin-corpus/open-external',
         openers: '/api/dsh-plugin-corpus/openers',
+        appIcon: '/api/dsh-plugin-corpus/app-icon',
       }
 
       const COPY = {
@@ -1384,9 +1386,32 @@
       function FileTypeIcon(props) {
         const item = props.item
         const format = String(item.format || '').toLowerCase()
+        const [broken, setBroken] = React.useState(false)
+        const [iconVersion, setIconVersion] = React.useState(APP_ICON_VERSION)
+        React.useEffect(() => {
+          const refresh = () => setIconVersion(String(Date.now()))
+          let target = null
+          try { target = window } catch { target = null }
+          if (target && typeof target.addEventListener === 'function') {
+            target.addEventListener('dsh-corpus-icons-changed', refresh)
+            return () => target.removeEventListener('dsh-corpus-icons-changed', refresh)
+          }
+          return undefined
+        }, [])
         const known = FILE_TYPE_ICONS[format] || null
         const label = known ? known.label : (format === '' ? 'TXT' : format.slice(0, 4).toUpperCase())
         const color = known ? known.color : '#607d8b'
+        if (format !== '' && !broken) {
+          return h('img', {
+            src: API.appIcon + '?ext=' + encodeURIComponent(format) + '&v=' + encodeURIComponent(iconVersion),
+            alt: label,
+            title: label,
+            loading: 'lazy',
+            decoding: 'async',
+            onError: () => setBroken(true),
+            style: { width: '26px', height: '26px', objectFit: 'contain', display: 'block' },
+          })
+        }
         return h('div', {
           title: label,
           style: { position: 'relative', width: '26px', height: '28px', flex: '0 0 26px' },
@@ -1641,7 +1666,7 @@
                 onClick: (event) => {
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
                   setMenuPath(null)
-                  openOpenerPicker(item)
+                  if (typeof props.onExternal === 'function') props.onExternal(item, 'choose')
                 },
               }, '📂 ' + t.galleryChooseWith + '…'),
             ) : null,
@@ -1982,7 +2007,13 @@
 
         const openExternal = (path, mode) => {
           if (typeof path !== 'string' || path === '') return
-          postJson(API.openExternal, { path, mode: mode === 'choose' ? 'choose' : 'default' }).catch((error) => {
+          const refreshIcons = () => {
+            try {
+              setTimeout(() => window.dispatchEvent(new CustomEvent('dsh-corpus-icons-changed')), 1500)
+              setTimeout(() => window.dispatchEvent(new CustomEvent('dsh-corpus-icons-changed')), 5000)
+            } catch { /* 无法刷新图标时不影响打开 */ }
+          }
+          postJson(API.openExternal, { path, mode: mode === 'choose' ? 'choose' : 'default' }).then(refreshIcons).catch((error) => {
             try { window.alert(t.externalOpenFailed + errorText(error)) } catch { /* 无法弹窗时至少不吞掉 */ }
           })
         }
