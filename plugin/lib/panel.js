@@ -18,6 +18,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { findPowerShell } from './pdf.js'
+import { listOpenerApps, openerFor, saveOpener, validAppPath } from './openers.js'
 import {
   collectionNames,
   collectionStatus,
@@ -571,6 +572,17 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
     }),
   })
 
+  // 外部查看器候选：常见已安装编辑器 + 当前扩展名已记住的程序。
+  routes.push({
+    kind: 'exact',
+    path: `${PANEL_PREFIX}/openers`,
+    handler: guarded(async (req, res) => {
+      if (req.method !== 'GET') { sendJson(res, 405, { ok: false, error: 'method not allowed' }); return }
+      const ext = queryOf(req).get('ext') || ''
+      sendJson(res, 200, { ok: true, ...listOpenerApps(root, ext) })
+    }),
+  })
+
   // 用 Windows 默认关联程序打开 processed 文件。
   routes.push({
     kind: 'exact',
@@ -587,6 +599,28 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
         sendJson(res, 500, { ok: false, error: 'Windows PowerShell 不可用' }); return
       }
       try {
+        const requestedApp = body && typeof body.app === 'string' ? validAppPath(body.app) : null
+        if (body && typeof body.app === 'string' && requestedApp === null) {
+          sendJson(res, 400, { ok: false, error: '程序路径必须是存在的 .exe 文件' })
+          return
+        }
+        const remembered = mode === 'choose' ? null : openerFor(root, resolved.rel)
+        const appPath = requestedApp || (remembered ? remembered.path : null)
+        if (appPath !== null) {
+          if (requestedApp !== null) {
+            saveOpener(root, resolved.rel, {
+              name: body.appName || path.basename(appPath),
+              path: appPath,
+            })
+          }
+          const appScript = "Start-Process -FilePath $env:DSH_CORPUS_OPEN_APP -ArgumentList ('\"' + $env:DSH_CORPUS_OPEN_FILE + '\"')"
+          execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command', appScript], {
+            windowsHide: true,
+            env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs, DSH_CORPUS_OPEN_APP: appPath },
+          }, () => {})
+          sendJson(res, 200, { ok: true, path: resolved.rel, mode: 'app', app: appPath })
+          return
+        }
         const chooseScript = "$ErrorActionPreference = 'Stop'; Start-Process -FilePath rundll32.exe -ArgumentList 'shell32.dll,OpenAs_RunDLL', $env:DSH_CORPUS_OPEN_FILE"
         // 没有文件关联时 Start-Process 可能静默成功但不打开任何窗口；先检查关联，
         // 查不到就自动退回到 Windows「打开方式」，让用户完成第一次选择。

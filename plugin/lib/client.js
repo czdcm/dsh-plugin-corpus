@@ -80,6 +80,7 @@
         settingsRoot: '/api/dsh-plugin-corpus/settings/root',
         settingsOpen: '/api/dsh-plugin-corpus/settings/open',
         openExternal: '/api/dsh-plugin-corpus/open-external',
+        openers: '/api/dsh-plugin-corpus/openers',
       }
 
       const COPY = {
@@ -337,6 +338,14 @@
           galleryOriginalMissing: '无原文件',
           galleryDefaultOpen: '用默认程序直接打开',
           galleryChooseWith: '选择软件打开',
+          galleryPickAppTitle: '选择打开软件（会记住此类型）',
+          galleryPickAppHint: '选择后，该扩展名以后默认用这个软件打开；也可手动输入程序路径。',
+          galleryPickAppManual: '手动输入程序路径…',
+          galleryPickAppCurrent: '当前默认：',
+          galleryPickAppNone: '未设置',
+          galleryPickAppCancel: '取消',
+          galleryPickAppEmpty: '没有检测到常见编辑器，可手动输入 .exe 路径。',
+          galleryPickAppFailed: '设置默认应用失败：',
           galleryNoDocs: '还没有可展示的语料；用「导入语料」或在主会话里调用 corpus_structure 后，这里会出现文件列表。',
           reindexHelpTitle: '重建按钮说明',
           reindexHelpIntro: '两个按钮都会重建当前有权限集合的索引，但成本不同：',
@@ -618,6 +627,14 @@
           galleryOriginalMissing: 'No original file',
           galleryDefaultOpen: 'Open with default app',
           galleryChooseWith: 'Open with…',
+          galleryPickAppTitle: 'Choose an app (remember for this file type)',
+          galleryPickAppHint: 'The chosen app becomes the default for this extension; you can also enter an executable path.',
+          galleryPickAppManual: 'Enter executable path…',
+          galleryPickAppCurrent: 'Current default: ',
+          galleryPickAppNone: 'none',
+          galleryPickAppCancel: 'Cancel',
+          galleryPickAppEmpty: 'No common editors detected; enter an .exe path manually.',
+          galleryPickAppFailed: 'Could not set default app: ',
           galleryNoDocs: 'No corpus documents yet. Import files or call corpus_structure in the main session, then files will appear here.',
           reindexHelpTitle: 'Rebuild button help',
           reindexHelpIntro: 'Both buttons rebuild indexes for collections you can access, with different costs:',
@@ -1427,6 +1444,7 @@
         const [expanded, setExpanded] = React.useState({})
         const [expandedFolders, setExpandedFolders] = React.useState({})
         const [menuPath, setMenuPath] = React.useState(null)
+        const [openerState, setOpenerState] = React.useState(null)
 
         const load = React.useCallback(() => {
           setData((prev) => ({ ...prev, loading: true, error: null }))
@@ -1491,6 +1509,39 @@
           .filter((group) => group.items.length > 0)
         const toggleGroup = (name) => setExpanded((prev) => ({ ...prev, [name]: !prev[name] }))
         const toggleFolder = (key) => setExpandedFolders((prev) => ({ ...prev, [key]: !prev[key] }))
+
+        const openOpenerPicker = (item) => {
+          setMenuPath(null)
+          const ext = extensionOf(item.path)
+          setOpenerState({ path: item.path, ext, loading: true, error: null, apps: [], current: null })
+          getJson(API.openers + '?ext=' + encodeURIComponent(ext)).then((body) => {
+            setOpenerState((prev) => prev === null ? prev : ({
+              ...prev,
+              loading: false,
+              apps: Array.isArray(body && body.apps) ? body.apps : [],
+              current: body && body.current ? body.current : null,
+            }))
+          }).catch((error) => {
+            setOpenerState((prev) => prev === null ? prev : ({ ...prev, loading: false, error: errorText(error) }))
+          })
+        }
+
+        const chooseOpener = (appPath, appName) => {
+          if (!openerState || typeof appPath !== 'string' || appPath === '') return
+          const target = openerState
+          postJson(API.openExternal, { path: target.path, app: appPath, appName: appName || '' }).then(() => {
+            setOpenerState(null)
+          }).catch((error) => {
+            setOpenerState((prev) => prev === null ? prev : ({ ...prev, error: t.galleryPickAppFailed + errorText(error) }))
+          })
+        }
+
+        const manualOpener = () => {
+          if (!openerState) return
+          let value = ''
+          try { value = window.prompt(t.galleryPickAppManual, '') || '' } catch { value = '' }
+          if (value.trim() !== '') chooseOpener(value.trim(), '')
+        }
 
         const buildTree = (items) => {
           const root = { name: '', folders: new Map(), files: [] }
@@ -1590,7 +1641,7 @@
                 onClick: (event) => {
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
                   setMenuPath(null)
-                  if (typeof props.onExternal === 'function') props.onExternal(item, 'choose')
+                  openOpenerPicker(item)
                 },
               }, '📂 ' + t.galleryChooseWith + '…'),
             ) : null,
@@ -1670,6 +1721,47 @@
           )
         }
 
+        const openerDialog = openerState === null ? null : h('div', {
+          style: {
+            position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0, 0, 0, 0.62)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
+          },
+          onClick: () => setOpenerState(null),
+        },
+          h('div', {
+            style: {
+              width: 'min(520px, 92vw)', maxHeight: '80vh', overflow: 'auto', padding: '16px',
+              background: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)',
+              border: '1px solid var(--dsw-alias-border-l2)', borderRadius: '10px', boxSizing: 'border-box',
+            },
+            onClick: (event) => { if (event && typeof event.stopPropagation === 'function') event.stopPropagation() },
+          },
+            h('h3', { style: { margin: '0 0 6px', fontSize: '15px' } }, t.galleryPickAppTitle),
+            h('p', { style: SMALL }, t.galleryPickAppHint),
+            h('p', { style: SMALL }, t.galleryPickAppCurrent +
+              (openerState.current && openerState.current.name
+                ? openerState.current.name + ' — ' + openerState.current.path
+                : t.galleryPickAppNone)),
+            openerState.loading ? h('p', { style: SMALL }, t.loading) : null,
+            openerState.error !== null ? h('p', { role: 'status', style: STATUS(false) }, openerState.error) : null,
+            !openerState.loading && openerState.apps.length === 0
+              ? h('p', { style: SMALL }, t.galleryPickAppEmpty)
+              : null,
+            h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' } },
+              openerState.apps.map((app, index) => h('button', {
+                key: 'opener-' + index + '-' + app.path,
+                type: 'button',
+                style: { ...BTN, display: 'block', width: '100%', textAlign: 'left' },
+                onClick: () => chooseOpener(app.path, app.name),
+              }, app.name + ' — ' + app.path)),
+            ),
+            h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' } },
+              h('button', { type: 'button', style: BTN, onClick: manualOpener }, t.galleryPickAppManual),
+              h('button', { type: 'button', style: BTN_GHOST, onClick: () => setOpenerState(null) }, t.galleryPickAppCancel),
+            ),
+          ),
+        )
+
         return h('section', { style: SECTION },
           h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' } },
             h('h2', { style: H2 }, t.galleryTitle),
@@ -1686,6 +1778,7 @@
           h('p', { style: SMALL }, t.galleryDesc),
           h('p', { style: SMALL }, t.galleryExpandHint),
           body,
+          openerDialog,
         )
       }
 

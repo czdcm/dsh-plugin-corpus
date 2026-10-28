@@ -89,7 +89,7 @@ Write-Host '== v1.7 删除语料（软删除/trash） =='
 if ($LASTEXITCODE -ne 0) { throw 'test-trash.mjs 失败' }
 
 Write-Host ''
-Write-Host '== 插件入口集成（Cordis 桩，11 工具/17 路由） =='
+Write-Host '== 插件入口集成（Cordis 桩，11 工具/18 路由） =='
 & $Node tests\test-plugin-mount.mjs
 if ($LASTEXITCODE -ne 0) { throw 'test-plugin-mount.mjs 失败' }
 
