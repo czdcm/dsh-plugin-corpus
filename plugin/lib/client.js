@@ -1571,6 +1571,26 @@
           })
         }
 
+        const openSystemPicker = (item) => {
+          setMenuPath(null)
+          const ext = extensionOf(item.path)
+          postJson(API.openExternal, { path: item.path, mode: 'choose', remember: true }).then(() => {
+            let tries = 0
+            const timer = setInterval(() => {
+              tries += 1
+              getJson(API.openers + '?ext=' + encodeURIComponent(ext)).then((body) => {
+                if (body && body.current && typeof body.current.path === 'string') {
+                  clearInterval(timer)
+                  try { window.dispatchEvent(new CustomEvent('dsh-corpus-icons-changed')) } catch { /* 图标刷新失败不影响 */ }
+                }
+              }).catch(() => {})
+              if (tries >= 60) clearInterval(timer)
+            }, 1000)
+          }).catch((error) => {
+            try { window.alert(t.externalOpenFailed + errorText(error)) } catch { /* 无法弹窗时至少不吞掉 */ }
+          })
+        }
+
         const openMainItem = (item) => {
           setMenuPath(null)
           const ext = extensionOf(item.path)
@@ -1578,10 +1598,10 @@
             if (body && body.current && typeof body.current.path === 'string') {
               if (typeof props.onExternal === 'function') props.onExternal(item, 'default')
             } else {
-              openOpenerPicker(item)
+              openSystemPicker(item)
             }
           }).catch(() => {
-            if (typeof props.onExternal === 'function') props.onExternal(item, 'default')
+            openSystemPicker(item)
           })
         }
 
@@ -1684,20 +1704,10 @@
             },
               h('button', {
                 type: 'button',
-                style: { ...BTN, display: 'block', width: '100%', textAlign: 'left', fontSize: '11px', marginBottom: '4px' },
-                onClick: (event) => {
-                  if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
-                  setMenuPath(null)
-                  openOpenerPicker(item)
-                },
-              }, '⚙️ ' + t.galleryPickDefault),
-              h('button', {
-                type: 'button',
                 style: { ...BTN, display: 'block', width: '100%', textAlign: 'left', fontSize: '11px' },
                 onClick: (event) => {
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
-                  setMenuPath(null)
-                  if (typeof props.onExternal === 'function') props.onExternal(item, 'choose')
+                  openSystemPicker(item)
                 },
               }, '📂 ' + t.galleryPickSystem),
             ) : null,

@@ -715,6 +715,39 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
           windowsHide: true,
           env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs },
         }, () => {})
+        // 系统选择器不会告诉插件用户最终选了哪个程序；监听新启动的进程，
+        // 把带该文件路径的进程记成插件级的扩展名默认应用。
+        if (body && body.remember !== false && requestedApp === null) {
+          const watcherScript = [
+            '$file = $env:DSH_CORPUS_OPEN_FILE',
+            '$hostExe = $env:DSH_HOST_EXE',
+            '$exclude = @("rundll32.exe", "OpenWith.exe", "explorer.exe", "powershell.exe", "pwsh.exe", "dllhost.exe", "DeepSeek Harness.exe")',
+            '$before = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ProcessId)',
+            'for ($i = 0; $i -lt 240; $i++) {',
+            '  Start-Sleep -Milliseconds 500',
+            '  $proc = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {',
+            '    ($before -notcontains $_.ProcessId) -and $_.CommandLine -and $_.ExecutablePath -and',
+            '    ($exclude -notcontains $_.Name) -and ($_.ExecutablePath -ne $hostExe) -and',
+            '    ($_.CommandLine.IndexOf($file, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)',
+            '  } | Select-Object -First 1',
+            '  if ($proc) {',
+            '    @{ name = $proc.Name; path = $proc.ExecutablePath } | ConvertTo-Json -Compress',
+            '    exit 0',
+            '  }',
+            '}',
+          ].join('\n')
+          execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command', watcherScript], {
+            windowsHide: true, encoding: 'utf8', maxBuffer: 1024 * 1024,
+            env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs, DSH_HOST_EXE: process.execPath },
+          }, (error, stdout) => {
+            if (error || !stdout) return
+            try {
+              const detected = JSON.parse(String(stdout).trim())
+              const app = validAppPath(detected && detected.path)
+              if (app !== null) saveOpener(root, resolved.rel, { name: detected.name || path.basename(app), path: app })
+            } catch { /* 检测不到就保持未关联 */ }
+          })
+        }
         sendJson(res, 200, { ok: true, path: resolved.rel, mode })
       } catch (error) {
         sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) })
