@@ -1,0 +1,49 @@
+name: Publish npm package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Restore vendored binaries from release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="$(node -p "require('./plugin/package.json').version")"
+          echo "Release tag: $TAG"
+          echo "Package version: $VERSION"
+          gh release download "$TAG" \
+            --pattern "dsh-plugin-corpus-v${VERSION}-plugin.zip" \
+            --dir release
+          unzip -q release/*.zip -d release
+          test -f release/dsh-plugin-corpus/vendor/officecli/officecli.exe
+          test -f release/dsh-plugin-corpus/vendor/pdftotext/pdftotext.exe
+          rm -rf plugin/vendor
+          cp -R release/dsh-plugin-corpus/vendor plugin/vendor
+          test -f plugin/vendor/officecli/officecli.exe
+          test -f plugin/vendor/pdftotext/pdftotext.exe
+
+      - name: Publish to npm
+        working-directory: plugin
+        run: npm publish --access public --provenance
