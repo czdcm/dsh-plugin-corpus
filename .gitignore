@@ -10,3 +10,8 @@ plugin/vendor/pdftotext/*.dll
 
 # 本机权限配置（含工作区绝对路径）不入库；仓库带 example
 config/corpus-access.json
+
+# officecli 运行期临时目录（不要入库/打包）
+plugin/officecli-tmp-*
+.npm-pack.json
+
