@@ -587,22 +587,29 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
         sendJson(res, 500, { ok: false, error: 'Windows PowerShell 不可用' }); return
       }
       try {
-        if (mode === 'choose') {
-          // Windows「打开方式」对话框；用户选择已安装的软件。
-          execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command',
-            "Start-Process -FilePath rundll32.exe -ArgumentList 'shell32.dll,OpenAs_RunDLL', $env:DSH_CORPUS_OPEN_FILE"], {
-            windowsHide: true,
-            env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs },
-          }, () => {})
-        } else {
-          // 通过环境变量传路径，避免路径中的空格/引号进入命令行字符串。
-          // Start-Process 使用 Windows 文件关联，比 rundll32 url.dll 更可靠。
-          execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command',
-            'Start-Process -FilePath $env:DSH_CORPUS_OPEN_FILE'], {
-            windowsHide: true,
-            env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs },
-          }, () => {})
-        }
+        const chooseScript = "$ErrorActionPreference = 'Stop'; Start-Process -FilePath rundll32.exe -ArgumentList 'shell32.dll,OpenAs_RunDLL', $env:DSH_CORPUS_OPEN_FILE"
+        // 没有文件关联时 Start-Process 可能静默成功但不打开任何窗口；先检查关联，
+        // 查不到就自动退回到 Windows「打开方式」，让用户完成第一次选择。
+        const defaultScript = [
+          '$ext = [IO.Path]::GetExtension($env:DSH_CORPUS_OPEN_FILE)',
+          '$prog = $null',
+          'if ($ext) {',
+          '  $choice = Get-ItemProperty -LiteralPath ("HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\" + $ext + "\\UserChoice") -ErrorAction SilentlyContinue',
+          '  if ($choice -and $choice.ProgId) { $prog = $choice.ProgId }',
+          '  if (-not $prog) { $prog = (Get-ItemProperty -LiteralPath ("Registry::HKEY_CLASSES_ROOT\\" + $ext) -ErrorAction SilentlyContinue)."(default)" }',
+          '  if ($prog) {',
+          '    $open = Get-ItemProperty -LiteralPath ("Registry::HKEY_CLASSES_ROOT\\" + $prog + "\\shell\\open\\command") -ErrorAction SilentlyContinue',
+          '    if (-not $open) { $prog = $null }',
+          '  }',
+          '}',
+          'if ($prog) { Start-Process -FilePath $env:DSH_CORPUS_OPEN_FILE }',
+          "else { Start-Process -FilePath rundll32.exe -ArgumentList 'shell32.dll,OpenAs_RunDLL', $env:DSH_CORPUS_OPEN_FILE }",
+        ].join('\n')
+        const script = mode === 'choose' ? chooseScript : defaultScript
+        execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+          windowsHide: true,
+          env: { ...process.env, DSH_CORPUS_OPEN_FILE: resolved.abs },
+        }, () => {})
         sendJson(res, 200, { ok: true, path: resolved.rel, mode })
       } catch (error) {
         sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) })

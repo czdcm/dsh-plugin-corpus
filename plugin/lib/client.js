@@ -317,7 +317,7 @@
           importOpen: '导入语料',
           importClose: '收起导入',
           galleryTitle: '语料文件',
-          galleryDesc: '按集合和子目录分组的文件树；按已知扩展名显示 TXT/MD/PDF 等对应文件图标。点击文件行用外部软件打开处理后语料。',
+          galleryDesc: '按集合和子目录分组的文件树；按已知扩展名显示 TXT/MD/PDF 等对应文件图标。点击文件行用外部软件打开语料。',
           galleryFilter: '集合范围',
           galleryAll: '全部集合',
           galleryCount: (total, shown) => `共 ${total} 篇，显示 ${shown} 篇`,
@@ -598,7 +598,7 @@
           importOpen: 'Import corpus',
           importClose: 'Collapse import',
           galleryTitle: 'Corpus files',
-          galleryDesc: 'File tree grouped by collection and subfolder; known extensions map to their TXT/MD/PDF file-type icons. Click a file row to open processed content in an external app.',
+          galleryDesc: 'File tree grouped by collection and subfolder; known extensions map to their TXT/MD/PDF file-type icons. Click a file row to open it in an external app.',
           galleryFilter: 'Collection',
           galleryAll: 'All collections',
           galleryCount: (total, shown) => `${total} documents, showing ${shown}`,
@@ -1556,7 +1556,7 @@
               h('button', {
                 type: 'button',
                 style: { ...BTN, padding: '2px 7px', fontSize: '10px', borderTopRightRadius: 0, borderBottomRightRadius: 0 },
-                title: t.externalOpen + '（' + t.galleryProcessed + '）',
+                title: t.externalOpen,
                 onClick: (event) => {
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
                   setMenuPath(null)
@@ -1566,8 +1566,8 @@
               h('button', {
                 type: 'button',
                 style: { ...BTN, padding: '2px 5px', fontSize: '10px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0 },
-                title: t.galleryChooseWith + ' / ' + t.galleryProcessed,
-                'aria-label': t.galleryChooseWith + ' / ' + t.galleryProcessed,
+                title: t.galleryChooseWith,
+                'aria-label': t.galleryChooseWith,
                 onClick: (event) => {
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
                   setMenuPath((prev) => prev === item.path ? null : item.path)
@@ -1592,7 +1592,7 @@
                   setMenuPath(null)
                   if (typeof props.onExternal === 'function') props.onExternal(item, 'choose')
                 },
-              }, t.galleryProcessed + '…'),
+              }, '📂 ' + t.galleryChooseWith + '…'),
             ) : null,
             h(DeleteButton, {
               key: 'delete-row',
@@ -1889,7 +1889,9 @@
 
         const openExternal = (path, mode) => {
           if (typeof path !== 'string' || path === '') return
-          postJson(API.openExternal, { path, mode: mode === 'choose' ? 'choose' : 'default' }).catch(() => {})
+          postJson(API.openExternal, { path, mode: mode === 'choose' ? 'choose' : 'default' }).catch((error) => {
+            try { window.alert(t.externalOpenFailed + errorText(error)) } catch { /* 无法弹窗时至少不吞掉 */ }
+          })
         }
 
         const startReindex = (payload) => {
