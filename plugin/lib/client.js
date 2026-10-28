@@ -1387,18 +1387,10 @@
         )
       }
 
-      /** 文件列表显示名：标题 + 扩展名（已带扩展名则不重复）。 */
-      function fileNameOf(item) {
-        const title = String(item && (item.title || item.path) || '')
-        const format = String(item && item.format || '').trim().toLowerCase()
-        const suffix = format === '' ? extensionOf(item && item.path) : (format.charAt(0) === '.' ? format : '.' + format)
-        if (title === '' || suffix === '') return title
-        return title.toLowerCase().endsWith(suffix.toLowerCase()) ? title : title + suffix
-      }
-
-      function FileTypeIcon(props) {
+      /** 「用外部软件打开」按钮图标：跟随该扩展名的默认应用；未知时用文件夹图标。 */
+      function OpenAppIcon(props) {
         const item = props.item
-        const format = String(item.format || '').toLowerCase()
+        const format = String(item && item.format || '').toLowerCase()
         const [broken, setBroken] = React.useState(false)
         const [iconVersion, setIconVersion] = React.useState(APP_ICON_VERSION)
         React.useEffect(() => {
@@ -1414,20 +1406,34 @@
           }
           return undefined
         }, [])
-        const known = FILE_TYPE_ICONS[format] || null
-        const label = known ? known.label : (format === '' ? 'TXT' : format.slice(0, 4).toUpperCase())
-        const color = known ? known.color : '#607d8b'
         if (format !== '' && !broken) {
           return h('img', {
             src: API.appIcon + '?ext=' + encodeURIComponent(format) + '&v=' + encodeURIComponent(iconVersion),
-            alt: label,
-            title: label,
+            alt: '',
             loading: 'lazy',
             decoding: 'async',
             onError: () => setBroken(true),
-            style: { width: '26px', height: '26px', objectFit: 'contain', display: 'block' },
+            style: { width: '15px', height: '15px', objectFit: 'contain', verticalAlign: '-2px' },
           })
         }
+        return h('span', { style: { fontSize: '13px', lineHeight: '15px' } }, '📂')
+      }
+
+      /** 文件列表显示名：标题 + 扩展名（已带扩展名则不重复）。 */
+      function fileNameOf(item) {
+        const title = String(item && (item.title || item.path) || '')
+        const format = String(item && item.format || '').trim().toLowerCase()
+        const suffix = format === '' ? extensionOf(item && item.path) : (format.charAt(0) === '.' ? format : '.' + format)
+        if (title === '' || suffix === '') return title
+        return title.toLowerCase().endsWith(suffix.toLowerCase()) ? title : title + suffix
+      }
+
+      function FileTypeIcon(props) {
+        const item = props.item
+        const format = String(item.format || '').toLowerCase()
+        const known = FILE_TYPE_ICONS[format] || null
+        const label = known ? known.label : (format === '' ? 'TXT' : format.slice(0, 4).toUpperCase())
+        const color = known ? known.color : '#607d8b'
         return h('div', {
           title: label,
           style: { position: 'relative', width: '26px', height: '28px', flex: '0 0 26px' },
@@ -1681,7 +1687,7 @@
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
                   openMainItem(item)
                 },
-              }, '📂 ' + t.externalOpen),
+              }, h(OpenAppIcon, { item }), ' ' + t.externalOpen),
               h('button', {
                 type: 'button',
                 style: { ...BTN, padding: '2px 5px', fontSize: '10px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0 },
