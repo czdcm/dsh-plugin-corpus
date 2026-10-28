@@ -59,6 +59,8 @@
       const IMPORT_POLL_MS = 1000
       const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
       const MAX_FILES = 20
+      // 单个 POST 的 JSON 体积上限（服务端默认 48 MiB）；超过时分批顺序导入。
+      const MAX_IMPORT_BODY_CHARS = 36 * 1024 * 1024
       // 契约里 extract.js 的 SUPPORTED_EXTENSIONS；/import/targets 未返回时作兜底。
       const DEFAULT_FORMATS = ['.md', '.markdown', '.txt', '.text', '.html', '.htm', '.pdf', '.docx', '.xlsx', '.pptx', '.csv']
 
@@ -281,6 +283,8 @@
           importRunning: '导入中…',
           importBusy: '已有导入任务在执行，请等它结束。',
           importStarted: '导入任务已启动，进度每秒刷新。',
+          importBatchRunning: (done, total) => `共 ${total} 批，正在导入第 ${done} 批…`,
+          importBatchDone: (total) => `已按 ${total} 批完成导入。`,
           importProgress: '导入进度',
           importStage: '阶段',
           importStageExtract: '提取文本',
@@ -547,6 +551,8 @@
           importRunning: 'Importing…',
           importBusy: 'An import job is already running; wait for it to finish.',
           importStarted: 'Import job started; progress refreshes every second.',
+          importBatchRunning: (done, total) => `${total} batches; importing batch ${done}…`,
+          importBatchDone: (total) => `Import completed in ${total} batches.`,
           importProgress: 'Import progress',
           importStage: 'Stage',
           importStageExtract: 'Extract text',
@@ -2806,6 +2812,23 @@
           return 'import-' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '-' + pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds())
         }
 
+        /** 等当前导入任务结束；用于大文件分批顺序导入。 */
+        const waitImportIdle = () => new Promise((resolve, reject) => {
+          const tick = () => {
+            getJson(API.importStatus).then((body) => {
+              if (!mountedRef.current) { resolve(null); return }
+              const active = body && body.active ? body.active : null
+              const recent = body && Array.isArray(body.recent) ? body.recent : []
+              setJobInfo({ active, recent, error: null })
+              if (active !== null) { setTimeout(tick, IMPORT_POLL_MS); return }
+              const last = recent.length > 0 ? recent[0] : null
+              if (last && last.state === 'error') reject(new Error(last.error || 'import failed'))
+              else resolve(last)
+            }).catch(reject)
+          }
+          tick()
+        })
+
         const startImport = () => {
           if (busy) return
           const tr = copy()
@@ -2824,7 +2847,60 @@
               setNote({ ok: false, text: tr.importNoFiles })
               return
             }
-            payload.files = files.map((file) => ({ name: String(file.name), dataBase64: String(file.dataBase64 || '') }))
+            const encoded = files.map((file) => ({ name: String(file.name), dataBase64: String(file.dataBase64 || '') }))
+            const totalChars = encoded.reduce((sum, file) => sum + file.dataBase64.length, 0)
+            if (totalChars > MAX_IMPORT_BODY_CHARS) {
+              const batches = []
+              let current = []
+              let currentChars = 0
+              for (const file of encoded) {
+                if (current.length > 0 && currentChars + file.dataBase64.length > MAX_IMPORT_BODY_CHARS) {
+                  batches.push(current)
+                  current = []
+                  currentChars = 0
+                }
+                current.push(file)
+                currentChars += file.dataBase64.length
+              }
+              if (current.length > 0) batches.push(current)
+              setStarting(true)
+              setNote(null)
+              setResult(null)
+              Promise.resolve().then(async () => {
+                let last = null
+                for (let index = 0; index < batches.length; index++) {
+                  if (!mountedRef.current) return
+                  setNote({ ok: true, text: tr.importBatchRunning(index + 1, batches.length) })
+                  const body = await postJson(API.importStart, { ...payload, files: batches[index] }, { allowFalse: true })
+                  if (body.ok !== true) {
+                    if (body.busy === true) throw new Error(tr.importBusy)
+                    throw new Error(String(body.error || tr.importErrorNote))
+                  }
+                  if (body.job && typeof body.job === 'object') setJobInfo({ active: body.job, recent: [], error: null })
+                  last = await waitImportIdle()
+                }
+                if (!mountedRef.current) return
+                setStarting(false)
+                setNote({ ok: true, text: tr.importBatchDone(batches.length) })
+                if (last !== null) setResult(last)
+                loadTargets()
+                if (props && typeof props.onImported === 'function') {
+                  try { props.onImported() } catch { /* 刷新失败不影响导入结果 */ }
+                }
+                try {
+                  let target = null
+                  try { target = window } catch { target = null }
+                  if (target && typeof target.dispatchEvent === 'function') target.dispatchEvent(new CustomEvent('dsh-corpus-files-changed'))
+                } catch { /* 刷新文件列表失败不影响导入结果 */ }
+              }).catch((error) => {
+                if (!mountedRef.current) return
+                setStarting(false)
+                setJobInfo({ active: null, recent: [], error: errorText(error) })
+                setNote({ ok: false, text: tr.importErrorNote + errorText(error) })
+              })
+              return
+            }
+            payload.files = encoded
           } else {
             const pathText = pathInput.trim()
             if (pathText === '') {

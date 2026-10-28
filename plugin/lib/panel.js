@@ -416,6 +416,11 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
         sendJson(res, 503, { ok: false, error: '导入服务不可用' })
         return
       }
+      const declared = Number(req.headers && req.headers['content-length'])
+      if (Number.isFinite(declared) && declared > 48 * 1024 * 1024) {
+        sendJson(res, 413, { ok: false, error: '本次导入批次超过 48 MiB，请减少文件或改用本机路径导入' })
+        return
+      }
       const body = await readJson(req, 48 * 1024 * 1024)
       const files = Array.isArray(body.files) ? body.files : []
       const paths = Array.isArray(body.paths)
