@@ -1406,17 +1406,23 @@
           }
           return undefined
         }, [])
-        if (format !== '' && !broken) {
-          return h('img', {
-            src: API.appIcon + '?ext=' + encodeURIComponent(format) + '&v=' + encodeURIComponent(iconVersion),
-            alt: '',
-            loading: 'lazy',
-            decoding: 'async',
-            onError: () => setBroken(true),
-            style: { width: '16px', height: '16px', objectFit: 'contain', verticalAlign: '-2px' },
-          })
+        const boxStyle = {
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: '16px', height: '16px', lineHeight: 1, flex: '0 0 16px',
         }
-        return h('span', { style: { fontSize: '14px', lineHeight: '16px' } }, '📂')
+        if (format !== '' && !broken) {
+          return h('span', { style: boxStyle },
+            h('img', {
+              src: API.appIcon + '?ext=' + encodeURIComponent(format) + '&v=' + encodeURIComponent(iconVersion),
+              alt: '',
+              loading: 'lazy',
+              decoding: 'async',
+              onError: () => setBroken(true),
+              style: { width: '16px', height: '16px', objectFit: 'contain', display: 'block' },
+            }),
+          )
+        }
+        return h('span', { style: { ...boxStyle, fontSize: '13px', textAlign: 'center' } }, '📂')
       }
 
       /** 文件列表显示名：标题 + 扩展名（已带扩展名则不重复）。 */
@@ -1681,7 +1687,11 @@
             h('div', { style: { display: 'flex', alignItems: 'center' } },
               h('button', {
                 type: 'button',
-                style: { ...BTN, padding: '2px 7px', fontSize: '10px', borderTopRightRadius: 0, borderBottomRightRadius: 0 },
+                style: {
+                  ...BTN, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: '30px', height: '24px', padding: 0, lineHeight: 1, boxSizing: 'border-box',
+                  fontSize: '10px', borderTopRightRadius: 0, borderBottomRightRadius: 0,
+                },
                 title: t.externalOpen,
                 onClick: (event) => {
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
@@ -1690,7 +1700,11 @@
               }, h(OpenAppIcon, { item })),
               h('button', {
                 type: 'button',
-                style: { ...BTN, padding: '2px 5px', fontSize: '10px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0 },
+                style: {
+                  ...BTN, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: '24px', height: '24px', padding: 0, lineHeight: 1, boxSizing: 'border-box',
+                  fontSize: '10px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0,
+                },
                 title: t.galleryChooseWith,
                 'aria-label': t.galleryChooseWith,
                 onClick: (event) => {
