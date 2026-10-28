@@ -1413,10 +1413,10 @@
             loading: 'lazy',
             decoding: 'async',
             onError: () => setBroken(true),
-            style: { width: '15px', height: '15px', objectFit: 'contain', verticalAlign: '-2px' },
+            style: { width: '16px', height: '16px', objectFit: 'contain', verticalAlign: '-2px' },
           })
         }
-        return h('span', { style: { fontSize: '13px', lineHeight: '15px' } }, '📂')
+        return h('span', { style: { fontSize: '14px', lineHeight: '16px' } }, '📂')
       }
 
       /** 文件列表显示名：标题 + 扩展名（已带扩展名则不重复）。 */
@@ -1687,7 +1687,7 @@
                   if (event && typeof event.stopPropagation === 'function') event.stopPropagation()
                   openMainItem(item)
                 },
-              }, h(OpenAppIcon, { item }), ' ' + t.externalOpen),
+              }, h(OpenAppIcon, { item })),
               h('button', {
                 type: 'button',
                 style: { ...BTN, padding: '2px 5px', fontSize: '10px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0 },

@@ -50,6 +50,60 @@ function externalEnv(extra = {}) {
   return env
 }
 
+/** 解析 Windows 当前为该扩展名记录的应用（UserChoice → HKCR → OpenWithList）。 */
+async function resolveAssociatedApp(extension) {
+  if (process.platform !== 'win32') return null
+  const powershell = findPowerShell()
+  if (powershell === null) return null
+  const ext = '.' + String(extension || '').trim().toLowerCase().replace(/^\./, '')
+  if (ext === '.') return null
+  const script = [
+    '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)',
+    '$fileExt = $env:DSH_ASSOC_EXT',
+    '$app = $null',
+    'function Resolve-App([string]$name) {',
+    '  foreach ($root in @("HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths", "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths")) {',
+    '    $candidate = (Get-ItemProperty -LiteralPath ($root + "\\" + $name) -ErrorAction SilentlyContinue)."(default)"',
+    '    if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate }',
+    '  }',
+    '  try { return (Get-Command $name -ErrorAction Stop).Source } catch { return $null }',
+    '}',
+    '$prog = $null',
+    '$choice = Get-ItemProperty -LiteralPath ("HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\" + $fileExt + "\\UserChoice") -ErrorAction SilentlyContinue',
+    'if ($choice -and $choice.ProgId) { $prog = $choice.ProgId }',
+    'if (-not $prog) { $prog = (Get-ItemProperty -LiteralPath ("Registry::HKEY_CLASSES_ROOT\\" + $fileExt) -ErrorAction SilentlyContinue)."(default)" }',
+    'if ($prog) {',
+    '  $cmd = (Get-ItemProperty -LiteralPath ("Registry::HKEY_CLASSES_ROOT\\" + $prog + "\\shell\\open\\command") -ErrorAction SilentlyContinue)."(default)"',
+    '  if ($cmd) {',
+    '    if ($cmd -match \'^\\s*"([^"]+)"\') { $app = $matches[1] }',
+    '    elseif ($cmd -match \'^\\s*(\\S+)\') { $app = $matches[1] }',
+    '  }',
+    '}',
+    'if (-not $app) {',
+    '  $openWith = Get-ItemProperty -LiteralPath ("HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\" + $fileExt + "\\OpenWithList") -ErrorAction SilentlyContinue',
+    '  if ($openWith -and $openWith.MRUList) { $letter = $openWith.MRUList.Substring(0, 1); $exe = $openWith.$letter; if ($exe) { $app = Resolve-App $exe } }',
+    '}',
+    'if (-not $app -or -not (Test-Path -LiteralPath $app)) { exit 2 }',
+    '$name = (Get-Item -LiteralPath $app).VersionInfo.FileDescription',
+    'if (-not $name) { $name = [IO.Path]::GetFileNameWithoutExtension($app) }',
+    '@{ name = $name; path = $app } | ConvertTo-Json -Compress',
+  ].join('\n')
+  const result = await new Promise((resolve) => {
+    execFile(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+      encoding: 'utf8', maxBuffer: 1024 * 1024, windowsHide: true,
+      env: externalEnv({ DSH_ASSOC_EXT: ext }),
+    }, (error, stdout) => resolve({ error, stdout: String(stdout || '').trim() }))
+  })
+  if (result.error || result.stdout === '') return null
+  try {
+    const parsed = JSON.parse(result.stdout)
+    if (!parsed || typeof parsed.path !== 'string' || !fs.existsSync(parsed.path)) return null
+    return { name: typeof parsed.name === 'string' && parsed.name !== '' ? parsed.name : path.basename(parsed.path), path: parsed.path }
+  } catch {
+    return null
+  }
+}
+
 function resolveCorpusFile(root, relPath) {
   const rel = String(relPath || '').replace(/\\/g, '/')
   const parts = rel.split('/')
@@ -590,7 +644,9 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
     handler: guarded(async (req, res) => {
       if (req.method !== 'GET') { sendJson(res, 405, { ok: false, error: 'method not allowed' }); return }
       const ext = queryOf(req).get('ext') || ''
-      sendJson(res, 200, { ok: true, ...listOpenerApps(root, ext) })
+      const info = listOpenerApps(root, ext)
+      const resolved = await resolveAssociatedApp(ext)
+      sendJson(res, 200, { ok: true, ...info, resolved })
     }),
   })
 
