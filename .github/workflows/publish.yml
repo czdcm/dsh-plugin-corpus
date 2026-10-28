@@ -3,10 +3,19 @@ name: Publish npm package
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish
+        required: true
+        default: v1.3.1
 
 permissions:
   contents: read
   id-token: write
+
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
 
 jobs:
   publish:
@@ -15,7 +24,7 @@ jobs:
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
 
       - name: Setup Node
@@ -29,14 +38,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.release.tag_name }}"
           VERSION="$(node -p "require('./plugin/package.json').version")"
-          echo "Release tag: $TAG"
+          echo "Release tag: $RELEASE_TAG"
           echo "Package version: $VERSION"
-          gh release download "$TAG" \
+          gh release download "$RELEASE_TAG" \
             --pattern "dsh-plugin-corpus-v${VERSION}-plugin.zip" \
             --dir release
-          unzip -q release/*.zip -d release
+          python3 - <<'PY'
+          import pathlib
+          import zipfile
+
+          zips = list(pathlib.Path('release').glob('*.zip'))
+          if len(zips) != 1:
+              raise SystemExit(f'expected one release zip, got {zips}')
+          with zipfile.ZipFile(zips[0]) as archive:
+              for info in archive.infolist():
+                  # The Windows-built release zip stores backslashes in entry names.
+                  info.filename = info.filename.replace('\\', '/')
+                  archive.extract(info, 'release')
+          PY
           test -f release/dsh-plugin-corpus/vendor/officecli/officecli.exe
           test -f release/dsh-plugin-corpus/vendor/pdftotext/pdftotext.exe
           rm -rf plugin/vendor
