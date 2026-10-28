@@ -1393,7 +1393,10 @@
         const [broken, setBroken] = React.useState(false)
         const [iconVersion, setIconVersion] = React.useState(APP_ICON_VERSION)
         React.useEffect(() => {
-          const refresh = () => setIconVersion(String(Date.now()))
+          const refresh = () => {
+            setBroken(false)
+            setIconVersion(String(Date.now()))
+          }
           let target = null
           try { target = window } catch { target = null }
           if (target && typeof target.addEventListener === 'function') {
