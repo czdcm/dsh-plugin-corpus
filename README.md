@@ -72,6 +72,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 ```text
 <语料根>/
 ├─ <集合>/
+│  ├─ <子目录>/         可选，可继续嵌套，形成树状目录
 │  └─ <导入文件夹>/
 │     ├─ processed/     模型使用的 Markdown（含 LaTeX 公式）
 │     └─ .meta.json
@@ -83,7 +84,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
    └─ trash/            软删除内容，可手动恢复
 ```
 
-模型只检索/读取 `processed/`；插件不再保存或提供源文件。
+模型只检索/读取 `processed/`；插件不再保存或提供源文件。集合内部可以像文件系统一样建子目录并继续嵌套，文件列表会按目录分组显示。
 
 ## 工具
 

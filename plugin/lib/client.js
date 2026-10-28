@@ -317,7 +317,7 @@
           importOpen: '导入语料',
           importClose: '收起导入',
           galleryTitle: '语料文件',
-          galleryDesc: '按集合分组的文件列表；按已知扩展名显示 TXT/MD/PDF 等对应文件图标。点击一行用外部软件打开处理后语料。',
+          galleryDesc: '按集合和子目录分组的文件树；按已知扩展名显示 TXT/MD/PDF 等对应文件图标。点击文件行用外部软件打开处理后语料。',
           galleryFilter: '集合范围',
           galleryAll: '全部集合',
           galleryCount: (total, shown) => `共 ${total} 篇，显示 ${shown} 篇`,
@@ -327,7 +327,7 @@
           galleryDocsUnit: '篇',
           galleryExpandAll: '全部展开',
           galleryCollapseAll: '全部折叠',
-          galleryExpandHint: '点击集合名展开/折叠；删除单篇语料用行尾「删除」按钮。',
+          galleryExpandHint: '点击集合或文件夹名展开/折叠；删除单篇语料用行尾「删除」按钮。',
           galleryCollapsed: '已折叠',
           deleteRow: '删除',
           deleteRowConfirm: '确认',
@@ -598,7 +598,7 @@
           importOpen: 'Import corpus',
           importClose: 'Collapse import',
           galleryTitle: 'Corpus files',
-          galleryDesc: 'Files grouped by collection; known extensions map to their TXT/MD/PDF file-type icons. Click a row to open processed content in an external app.',
+          galleryDesc: 'File tree grouped by collection and subfolder; known extensions map to their TXT/MD/PDF file-type icons. Click a file row to open processed content in an external app.',
           galleryFilter: 'Collection',
           galleryAll: 'All collections',
           galleryCount: (total, shown) => `${total} documents, showing ${shown}`,
@@ -608,7 +608,7 @@
           galleryDocsUnit: 'docs',
           galleryExpandAll: 'Expand all',
           galleryCollapseAll: 'Collapse all',
-          galleryExpandHint: 'Click a collection name to expand/collapse; use Delete at the end of a row to remove one document.',
+          galleryExpandHint: 'Click a collection or folder name to expand/collapse; use Delete at the end of a row to remove one document.',
           galleryCollapsed: 'collapsed',
           deleteRow: 'Delete',
           deleteRowConfirm: 'Confirm',
@@ -1425,6 +1425,7 @@
         const [collection, setCollection] = React.useState('')
         const [data, setData] = React.useState({ loading: true, error: null, items: [], total: 0, shown: 0 })
         const [expanded, setExpanded] = React.useState({})
+        const [expandedFolders, setExpandedFolders] = React.useState({})
         const [menuPath, setMenuPath] = React.useState(null)
 
         const load = React.useCallback(() => {
@@ -1489,6 +1490,27 @@
           .map((name) => ({ name, items: byCollection.get(name) || [] }))
           .filter((group) => group.items.length > 0)
         const toggleGroup = (name) => setExpanded((prev) => ({ ...prev, [name]: !prev[name] }))
+        const toggleFolder = (key) => setExpandedFolders((prev) => ({ ...prev, [key]: !prev[key] }))
+
+        const buildTree = (items) => {
+          const root = { name: '', folders: new Map(), files: [] }
+          for (const item of items) {
+            const folder = typeof item.folder === 'string' ? item.folder : ''
+            const parts = folder.split('/').filter(Boolean)
+            let node = root
+            for (const part of parts) {
+              if (!node.folders.has(part)) node.folders.set(part, { name: part, folders: new Map(), files: [] })
+              node = node.folders.get(part)
+            }
+            node.files.push(item)
+          }
+          return root
+        }
+        const countTreeFiles = (node) => {
+          let count = node.files.length
+          for (const child of node.folders.values()) count += countTreeFiles(child)
+          return count
+        }
 
         const tableHead = h('div', {
           style: {
@@ -1505,19 +1527,20 @@
           h('span', null, t.galleryAction),
         )
 
-        const row = (item) => h('div', {
+        const row = (item, depth = 0) => h('div', {
           key: item.path,
           role: 'row',
           title: item.path,
           onClick: () => { if (typeof props.onExternal === 'function') props.onExternal(item, 'default') },
           style: {
-            display: 'grid', gridTemplateColumns: '34px minmax(160px, 1fr) 74px 82px 128px 174px',
+            display: 'grid',
+            gridTemplateColumns: `${34 + Math.max(0, depth) * 16}px minmax(160px, 1fr) 74px 82px 128px 174px`,
             gap: '8px', alignItems: 'center', padding: '5px 8px', cursor: 'pointer',
             borderBottom: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 45%, transparent)',
             fontSize: '12px', lineHeight: '18px',
           },
         },
-          h('span', { style: { display: 'flex', alignItems: 'center', justifyContent: 'center' } }, h(FileTypeIcon, { item })),
+          h('span', { style: { display: 'flex', alignItems: 'center', paddingLeft: (Math.max(0, depth) * 16) + 'px', boxSizing: 'border-box' } }, h(FileTypeIcon, { item })),
           h('span', { style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 } },
             item.title,
             item.aiStructured ? h('span', { style: { ...CHIP, marginLeft: '6px', fontSize: '10px', padding: '0 5px' } }, t.galleryAi) : null,
@@ -1609,7 +1632,39 @@
                   + (expanded[group.name] === true ? '' : ' · ' + t.galleryCollapsed)),
               ),
               expanded[group.name] === true
-                ? h(React.Fragment, null, tableHead, h('div', { role: 'table' }, group.items.map(row)))
+                ? h(React.Fragment, null, tableHead, h('div', { role: 'table' }, (() => {
+                    const root = buildTree(group.items)
+                    const nodes = []
+                    const walk = (node, prefix, depth) => {
+                      const folders = [...node.folders.values()].sort((left, right) => left.name.localeCompare(right.name, 'zh-Hans-CN'))
+                      for (const folder of folders) {
+                        const full = prefix === '' ? folder.name : prefix + '/' + folder.name
+                        const key = group.name + '/' + full
+                        const open = expandedFolders[key] === true
+                        nodes.push(h('div', {
+                          key: 'folder-' + key,
+                          role: 'button',
+                          'aria-expanded': open,
+                          onClick: () => toggleFolder(key),
+                          style: {
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            padding: '4px 8px', paddingLeft: (8 + depth * 16) + 'px', marginTop: '2px',
+                            background: 'var(--dsw-alias-bg-layer-2)',
+                            borderTop: '1px solid var(--dsw-alias-border-l2)',
+                            borderBottom: '1px solid var(--dsw-alias-border-l2)',
+                            cursor: 'pointer', userSelect: 'none', fontSize: '12px', fontWeight: 600,
+                          },
+                        },
+                          h('span', null, (open ? '▾ ' : '▸ ') + '📁 ' + folder.name),
+                          h('span', { style: SMALL }, String(countTreeFiles(folder)) + ' ' + t.galleryDocsUnit),
+                        ))
+                        if (open) walk(folder, full, depth + 1)
+                      }
+                      for (const item of node.files) nodes.push(row(item, depth))
+                    }
+                    walk(root, '', 0)
+                    return nodes
+                  })()))
                 : null,
             )),
           )

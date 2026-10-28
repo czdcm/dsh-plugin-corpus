@@ -95,6 +95,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 ```
 <CORPUS_ROOT>/
 ├─ <collection>/
+│  ├─ <subfolder>/      可选，可继续嵌套，形成树状目录
 │  └─ <import-folder>/
 │     ├─ processed/     模型使用的 Markdown
 │     └─ .meta.json
@@ -106,7 +107,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
    └─ trash/<时间>/     软删除内容，可手动恢复
 ```
 
-每次导入都有自己的文件夹，方便整体删除或迁移。
+每次导入都有自己的文件夹，方便整体删除或迁移；集合内部也可以建子目录并继续嵌套，文件列表按目录分组。
 
 索引表很轻：
 

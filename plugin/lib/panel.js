@@ -129,8 +129,18 @@ function stripFrontMatterText(text) {
   return match ? value.slice(match[0].length) : value
 }
 
-function readExcerpt(root, relPath, limit = 260) {
-  try {
+/** 文件在集合内的用户目录（去掉 per-import 的 <stamp>/processed 层）。 */
+function folderOf(collection, relPath) {
+  const rel = path.posix.relative(String(collection), String(relPath))
+  const parts = rel.split('/').filter(Boolean)
+  if (parts.length <= 1) return ''
+  parts.pop()
+  if (parts[parts.length - 1] === 'processed') parts.pop()
+  if (parts.length > 0 && /^\d{8}-\d{6}-/.test(parts[parts.length - 1])) parts.pop()
+  return parts.join('/')
+}
+
+function readExcerpt(root, relPath, limit = 260) {  try {
     const abs = path.resolve(root, ...String(relPath).split('/'))
     const rootAbs = path.resolve(root)
     if (!abs.startsWith(rootAbs + path.sep)) return ''
@@ -175,6 +185,7 @@ function listGallery(root, collectionFilter = '', limit = 60) {
         items.push({
           collection,
           path: file.path,
+          folder: folderOf(collection, file.path),
           title: meta && typeof meta.title === 'string' && meta.title !== '' ? meta.title : file.title,
           excerpt: readExcerpt(root, file.path),
           format: meta && typeof meta.format === 'string' && meta.format !== '' ? meta.format : (path.extname(file.path).slice(1) || 'text'),
