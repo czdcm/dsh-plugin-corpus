@@ -171,6 +171,14 @@ export function isUsablePdfText(value) {
   return pdfTextQuality(value).ok
 }
 
+/** Windows OCR 常把中文逐字用空格隔开；合并 CJK 之间的空格，保留英文词间距与换行。 */
+export function normalizeOcrText(value) {
+  return String(value || '')
+    .replace(/(?<=[\u4e00-\u9fff])[ \t]+(?=[\u4e00-\u9fff])/gu, '')
+    .replace(/(?<=[\u4e00-\u9fff])[ \t]+(?=[，。；：、！？（）《》【】])/gu, '')
+    .replace(/(?<=[，。；：、！？（）《》【】])[ \t]+(?=[\u4e00-\u9fff])/gu, '')
+}
+
 export function findPowerShell() {
   const candidates = [
     process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : '',
@@ -260,7 +268,7 @@ export function runWindowsOcr(file, mode = 'image', timeoutMs = 900000) {
         reject(new Error(`内置 OCR 失败：${String(stderr || error.message).trim()}`))
         return
       }
-      resolve(String(stdout || '').trim())
+      resolve(normalizeOcrText(String(stdout || '').trim()))
     })
   })
 }
