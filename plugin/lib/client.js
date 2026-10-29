@@ -194,6 +194,9 @@
           permDefaultHint: '切换立即保存；deny 始终优先于 allow。',
           permDenyRules: '拒绝规则',
           permNoDenyRules: '还没有拒绝规则。',
+          permAllowRules: '全局访问',
+          permNoAllowRules: '还没有全局访问规则。',
+          permGlobalHint: '默认拒绝时，在这里给指定合集开放全局访问；默认允许时这些规则是冗余的。',
           permOtherRules: '其他规则',
           permOtherHint: '不是当前会话/工作区、也不是全局的规则：只读展示，可删除。',
           permNoOtherRules: '没有其他规则。',
@@ -210,6 +213,7 @@
           permGrantSession: '授予当前会话',
           permGrantWorkspace: '授予当前工作区',
           permAddDeny: '添加全局拒绝',
+          permAddAllow: '添加全局访问',
           permDelete: '删除',
           permLoading: '正在加载访问信息…',
           permRetry: '重试',
@@ -220,6 +224,7 @@
           permRuleDeleted: '规则已删除。',
           permDefaultSaved: '默认动作已保存。',
           permDenyAdded: '拒绝规则已添加。',
+          permAllowAdded: '全局访问规则已添加。',
           permValidationFailed: '策略校验失败：',
           permCollections: '集合快捷填入',
           permAccessFile: '策略文件',
@@ -463,6 +468,9 @@
           permDefaultHint: 'The switch saves immediately; deny always wins over allow.',
           permDenyRules: 'Deny rules',
           permNoDenyRules: 'No deny rules yet.',
+          permAllowRules: 'Global access',
+          permNoAllowRules: 'No global access rules yet.',
+          permGlobalHint: 'With default deny, list collections to expose globally; with default allow these rules are redundant.',
           permOtherRules: 'Other rules',
           permOtherHint: 'Rules that belong to neither this session/workspace nor global policy: read-only, deletable.',
           permNoOtherRules: 'No other rules.',
@@ -479,6 +487,7 @@
           permGrantSession: 'Grant current session',
           permGrantWorkspace: 'Grant current workspace',
           permAddDeny: 'Add global deny',
+          permAddAllow: 'Add global access',
           permDelete: 'Delete',
           permLoading: 'Loading access information…',
           permRetry: 'Retry',
@@ -489,6 +498,7 @@
           permRuleDeleted: 'Rule deleted.',
           permDefaultSaved: 'Default saved.',
           permDenyAdded: 'Deny rule added.',
+          permAllowAdded: 'Global access rule added.',
           permValidationFailed: 'Policy validation failed:',
           permCollections: 'Quick fill',
           permAccessFile: 'Policy file',
@@ -2275,7 +2285,7 @@
         const [writeErrors, setWriteErrors] = React.useState([])
         const [sessionDraft, setSessionDraft] = React.useState('')
         const [workspaceDraft, setWorkspaceDraft] = React.useState('')
-        const [denyDraft, setDenyDraft] = React.useState('')
+        const [globalDraft, setGlobalDraft] = React.useState('')
         const [sessionExpiry, setSessionExpiry] = React.useState('0')
         const [workspaceExpiry, setWorkspaceExpiry] = React.useState('0')
         const mountedRef = React.useRef(true)
@@ -2310,7 +2320,9 @@
         const workspaceRules = workspaceKey === ''
           ? []
           : grants.filter((rule) => rule && typeof rule.workspace === 'string' && rule.workspace !== '*' && sameWorkspace(rule.workspace, workspaceKey))
-        const otherGrants = grants.filter((rule) => sessionRules.indexOf(rule) === -1 && workspaceRules.indexOf(rule) === -1)
+        const grantRules = grants.filter((rule) => sessionRules.indexOf(rule) === -1 && workspaceRules.indexOf(rule) === -1)
+        const globalAllowRules = grants.filter((rule) => rule && rule.workspace === '*')
+        const otherGrants = grantRules.filter((rule) => !(rule && rule.workspace === '*'))
         const currentDefault = policy && policy.default === 'allow' ? 'allow' : 'deny'
         const accessFile = policy && typeof policy.accessFile === 'string' ? policy.accessFile : ''
 
@@ -2328,7 +2340,7 @@
             setNote({ ok: true, text: successText })
             if (clearDraft === 'session') setSessionDraft('')
             if (clearDraft === 'workspace') setWorkspaceDraft('')
-            if (clearDraft === 'deny') setDenyDraft('')
+            if (clearDraft === 'global') setGlobalDraft('')
             setAccess((prev) => ({
               ...prev,
               data: prev.data ? { ...prev.data, policy: body && body.policy ? body.policy : prev.data.policy } : prev.data,
@@ -2384,17 +2396,17 @@
           }, t.permRuleAdded, 'workspace')
         }
 
-        const addDenyRule = () => {
-          const paths = parsePaths(denyDraft)
+        const addGlobalAccessRule = () => {
+          const paths = parsePaths(globalDraft)
           if (paths.length === 0) {
             setNote({ ok: false, text: t.permPathsRequired })
             setWriteErrors([])
             return
           }
           writePolicy((next) => {
-            next.deny.push({ paths })
+            next.grants.push({ workspace: '*', paths })
             return next
-          }, t.permDenyAdded, 'deny')
+          }, t.permAllowAdded, 'global')
         }
 
         const removeGrant = (rule) => {
@@ -2574,22 +2586,23 @@
             defaultButton('deny', t.permDefaultDeny),
           ),
           h('p', { style: PERM_TEXT }, t.permDefaultHint),
-          h('div', { style: { ...PERM_LABEL, marginTop: '10px', fontWeight: 600 } }, t.permDenyRules),
-          denies.length === 0
-            ? h('p', { style: PERM_TEXT }, t.permNoDenyRules)
-            : denies.map((rule, index) => denyRow(rule, index)),
+          h('p', { style: PERM_TEXT }, t.permGlobalHint),
+          h('div', { style: { ...PERM_LABEL, marginTop: '10px', fontWeight: 600 } }, t.permAllowRules),
+          globalAllowRules.length === 0
+            ? h('p', { style: PERM_TEXT }, t.permNoAllowRules)
+            : globalAllowRules.map((rule, index) => ruleRow(rule, index, false)),
           h('textarea', {
-            value: denyDraft,
+            value: globalDraft,
             rows: 2,
             placeholder: t.permPathsPlaceholder,
             style: { ...PERM_TEXTAREA, marginTop: '8px' },
             disabled: busy,
             'aria-label': t.permPathsPlaceholder,
-            onChange: (event) => setDenyDraft(event && event.target ? event.target.value : ''),
+            onChange: (event) => setGlobalDraft(event && event.target ? event.target.value : ''),
           }),
-          collectionChips(denyDraft, setDenyDraft),
+          collectionChips(globalDraft, setGlobalDraft),
           h('div', { style: PERM_FORM_ROW },
-            h('button', { type: 'button', style: BTN_PRIMARY, disabled: busy, onClick: addDenyRule }, busy ? t.permBusy : t.permAddDeny),
+            h('button', { type: 'button', style: BTN_PRIMARY, disabled: busy, onClick: addGlobalAccessRule }, busy ? t.permBusy : t.permAddAllow),
           ),
         )
 

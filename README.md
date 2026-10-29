@@ -142,6 +142,8 @@ GET/POST /policy
 
 默认拒绝。授权文件位于 `%USERPROFILE%\.dsh\corpus-access.json`，可按 workspace/session 授权，路径支持集合名、前缀和 glob；显式 `deny` 优先，过期授权忽略。
 
+面板「语料权限 → 全局」支持给指定合集开放全局访问：默认动作设为「拒绝」，在「全局访问」里填合集名，点「添加全局访问」。插件会保存一条 `{"workspace":"*","paths":["合集名"]}` 的 grant，只放行这些集合，其他集合仍拒绝。默认动作是「允许」时，这条规则是冗余的。
+
 本机 ACL 文件不提交到仓库；使用 `config/corpus-access.example.json` 作为模板。
 
 ## 配置

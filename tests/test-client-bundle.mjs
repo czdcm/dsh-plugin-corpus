@@ -8,7 +8,7 @@
  *   · v1.2 右栏：sidebarRightTabs 类型（id/kind/priority/guide order 55）+ pane body；
  *   · locale 注册 zh/en 的 nav/permTitle，label 跟随语言；
  *   · 整页组件首屏渲染不抛错、不提前 fetch；挂载 effect 会 GET /overview + /status；
- *   · 右栏权限面板：渲染会话/工作区/全局/其他规则；新增（带有效期）/删除/default/deny
+ *   · 右栏权限面板：渲染会话/工作区/全局/其他规则；新增（带有效期）/删除/default/全局访问
  *     都是 GET /policy → POST /policy → 重拉 GET /access；
  *   · v1.3 主页面「导入语料」区（不是右栏 tab）：头部按钮展开/收起、文件多选或本机路径、
  *     集合/prefix、AI 开关、POST /import 两种 body、1s 轮询 /import/status、完成刷新 overview；
@@ -417,7 +417,7 @@ function staticChecks() {
   ok('写操作先 GET /policy', SOURCE.indexOf('getJson(API.policy)') !== -1)
   ok('写操作再 POST /policy', SOURCE.indexOf('postJson(API.policy') !== -1)
   ok('源码含 /access 路径', SOURCE.indexOf(API_BASE + '/access') !== -1)
-  ok('源码含右栏 UI 关键文案', ['在右侧栏编辑权限', '授予当前会话', '授予当前工作区', '添加全局拒绝', '有效期至', '已过期', '其他规则']
+  ok('源码含右栏 UI 关键文案', ['在右侧栏编辑权限', '授予当前会话', '授予当前工作区', '添加全局访问', '有效期至', '已过期', '其他规则']
     .every((text) => SOURCE.indexOf(text) !== -1))
   ok('源码显示 400 校验 errors[]', SOURCE.indexOf('error.errors') !== -1 && SOURCE.indexOf('writeErrors') !== -1)
 
@@ -834,11 +834,11 @@ function permissionsRenderChecks() {
   ok('右栏面板含会话规则区', text.indexOf('会话规则') !== -1)
   ok('右栏面板含工作区规则区', text.indexOf('工作区规则') !== -1)
   ok('右栏面板含全局区', text.indexOf('全局') !== -1)
-  ok('右栏面板含拒绝规则区', text.indexOf('拒绝规则') !== -1)
+  ok('右栏面板含全局访问区', text.indexOf('全局访问') !== -1)
   ok('右栏面板含其他规则折叠', text.indexOf('其他规则') !== -1)
   ok('右栏面板含「授予当前会话」', text.indexOf('授予当前会话') !== -1)
   ok('右栏面板含「授予当前工作区」', text.indexOf('授予当前工作区') !== -1)
-  ok('右栏面板含「添加全局拒绝」', text.indexOf('添加全局拒绝') !== -1)
+  ok('右栏面板含「添加全局访问」', text.indexOf('添加全局访问') !== -1)
   ok('右栏面板显示有效期至', text.indexOf('有效期至') !== -1)
   ok('右栏面板标记已过期规则', text.indexOf('已过期') !== -1)
   ok('右栏面板显示永久规则', text.indexOf('永久') !== -1)
@@ -923,23 +923,23 @@ async function permissionWriteChecks() {
     }
   }
 
-  // 3) 全局 deny 新增
+  // 3) 全局访问新增（workspace=*）
   {
     const state = { access: accessData, summary: summaryOf(accessData), posted: [] }
     const { panel } = bootPermissions({
-      byIndex: { 0: { loading: false, error: null, data: accessData }, 6: '**/secret/**' },
+      byIndex: { 0: { loading: false, error: null, data: accessData }, 6: '机械' },
     }, makePermissionsResponder(state))
     const element = panel({ sessionId: accessData.sessionId })
-    findButton(element, '添加全局拒绝').props.onClick()
+    findButton(element, '添加全局访问').props.onClick()
     await tick()
     await tick()
     const posted = state.posted[0]
-    ok('全局拒绝 POST /policy', posted !== undefined)
+    ok('全局访问 POST /policy', posted !== undefined)
     if (posted) {
-      const added = posted.policy.deny[posted.policy.deny.length - 1]
-      eq('全局 deny paths', added.paths.join(','), '**/secret/**')
-      ok('全局 deny 不带主体', !Object.prototype.hasOwnProperty.call(added, 'workspace')
-        && !Object.prototype.hasOwnProperty.call(added, 'session'))
+      const added = posted.policy.grants[posted.policy.grants.length - 1]
+      eq('全局访问主体是 workspace=*', added.workspace, '*')
+      eq('全局访问 paths', added.paths.join(','), '机械')
+      ok('全局访问不带 session', !Object.prototype.hasOwnProperty.call(added, 'session'))
     }
   }
 

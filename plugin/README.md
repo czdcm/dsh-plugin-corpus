@@ -187,6 +187,8 @@ OfficeCLI 是 Apache-2.0；Poppler `pdftotext` 是 GPL-2.0-or-later，详见仓�
 - 集合名、路径前缀、glob 都可以作为 `paths`；
 - 工具调用、提示词列表、面板 `/access` 使用同一套判断。
 
+右栏「语料权限 → 全局」的「全局访问」用于默认拒绝时给指定合集放行：填写合集名后点击添加，保存为 `workspace: "*"` 的 grant，对所有工作区/会话生效；其他合集仍按默认拒绝。
+
 仓库中的 `config/corpus-access.example.json` 是脱敏模板；本机 ACL 文件不要提交。
 
 ---

@@ -287,7 +287,7 @@ meta(key TEXT PRIMARY KEY, value TEXT)
 `~/.dsh/corpus-access.json`：
 
 - `default: deny`
-- `grants[]`：workspace/session + paths/glob + 可选 `expiresAt`
+- `grants[]`：workspace/session + paths/glob + 可选 `expiresAt`；`workspace: "*"` 是全局访问（对所有工作区/会话生效）
 - `deny[]` 优先于 grants
 - 工具调用、提示词列表、面板 `/access` 都走同一套 `authorize()`
 
