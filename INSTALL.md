@@ -1,6 +1,6 @@
 # 安装指南
 
-本文说明如何在 Windows 上安装 `dsh-plugin-corpus-v1.4.0-plugin.zip`。
+本文说明如何在 Windows 上安装 `dsh-plugin-corpus-v1.4.1-plugin.zip`。
 
 本插件是 **DeepSeek Harness（DSH）插件**，不是独立应用：必须放入 DSH 插件目录，并在当前 DSH profile 中注册。
 
@@ -153,6 +153,6 @@ pnpm install
 
 | 包 | 内容 |
 |---|---|
-| `dsh-plugin-corpus-v1.4.0-plugin.zip` | 完整包：OfficeCLI + pdftotext + 许可证/源码说明 |
+| `dsh-plugin-corpus-v1.4.1-plugin.zip` | 完整包：OfficeCLI + pdftotext + 许可证/源码说明 |
 
 官方 Release 只发布完整包。源码中仍可用 `tools/package-plugin.ps1 -WithoutPdftotext` 做本地可选构建，但不再作为官方 Release 资产上传。
