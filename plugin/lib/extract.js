@@ -13,7 +13,7 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { extractOffice, extractOfficeFormulas, extractXlsxFormulas } from './office.js'
-import { extractPdfText, ocrAvailable, pdfExtractorAvailability, runBundledPdftotext, runWindowsOcr } from './pdf.js'
+import { extractPdfText, isUsablePdfText, ocrAvailable, pdfExtractorAvailability, pdfTextQuality, runBundledPdftotext, runWindowsOcr } from './pdf.js'
 import { extractFormulaLines, latexifyFormulaLines, mathmlToLatex, normalizeLatex } from './formulas.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -425,39 +425,61 @@ export async function extractDocument(file, options = {}) {
   } else if (ext === '.pdf') {
     const buffer = await fs.promises.readFile(file)
     text = ''
+    let rejectedText = ''
     if (pdfExtractorAvailability().bundled) {
       try {
-        text = await runBundledPdftotext(file)
-        extractor = 'bundled-pdftotext'
+        const candidate = await runBundledPdftotext(file)
+        if (isUsablePdfText(candidate)) {
+          text = candidate
+          extractor = 'bundled-pdftotext'
+        } else {
+          rejectedText = candidate
+          warnings.push(`pdftotext 输出不可读，已忽略${candidate.trim() === '' ? '（空文本）' : '（疑似乱码）'}`)
+        }
       } catch (error) {
         warnings.push(`随包 pdftotext 失败，改用纯 JS：${error instanceof Error ? error.message : String(error)}`)
       }
     }
-    if (String(text || '').trim() === '') {
-      text = extractPdfText(buffer)
-      extractor = 'pdf-js'
+    if (!isUsablePdfText(text)) {
+      const candidate = extractPdfText(buffer)
+      if (isUsablePdfText(candidate)) {
+        text = candidate
+        extractor = 'pdf-js'
+      } else if (candidate.trim() !== '') {
+        rejectedText = candidate
+        warnings.push('纯 JS PDF 文字层不可读，已忽略')
+      }
     }
-    if (text.trim().length < 40) {
+    if (!isUsablePdfText(text)) {
       if (ocrAvailable()) {
         try {
           const ocrText = await runWindowsOcr(file, 'pdf')
-          if (String(ocrText || '').trim() !== '') {
+          if (isUsablePdfText(ocrText)) {
             text = ocrText
             extractor = 'windows-ocr'
-            warnings.push('PDF 文字层不足，已用插件内置的 Windows OCR 提取')
+            warnings.push('PDF 文字层不可用，已用插件内置的 Windows OCR 提取')
+          } else {
+            warnings.push('PDF OCR 结果仍不可读，已丢弃')
           }
         } catch (error) {
           warnings.push(`PDF OCR 兜底失败：${error instanceof Error ? error.message : String(error)}`)
         }
       } else {
-        warnings.push('PDF 文字层不足，且当前系统没有可用的 OCR；可能是扫描版 PDF')
+        warnings.push('PDF 文字层不可用，且当前系统没有可用的 OCR；可能是扫描版 PDF')
       }
     }
+    if (!isUsablePdfText(text)) {
+      throw new Error('PDF 没有可读文字层，且 OCR 不可用或结果不可读；请检查 PDF 是否为扫描件/加密件')
+    }
+    const quality = pdfTextQuality(text)
+    meta = { ...meta, pdfQuality: quality }
+    if (rejectedText.trim() !== '') meta = { ...meta, rejectedPdfChars: rejectedText.length }
     text = normalizeLatex(text)
     const pdfFormulas = extractFormulaLines(text)
     if (pdfFormulas.length > 0) meta = { ...meta, formulaLines: pdfFormulas }
     text = latexifyFormulaLines(text)
-    title = titleFromText(text, fallbackTitle)
+    // 扫描版 OCR 的第一行常是页眉/标点，不应拿来当标题；优先用源文件名。
+    title = extractor === 'windows-ocr' ? fallbackTitle : titleFromText(text, fallbackTitle)
   } else if (IMAGE_EXTS.has(ext)) {
     kind = 'image'
     mediaType = IMAGE_MEDIA[ext]

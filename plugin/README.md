@@ -140,6 +140,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 | `.docx` `.xlsx` `.pptx` | 优先 OfficeCLI；失败/缺失时回退纯 JS ZIP+XML 解析 |
 | `.png` `.jpg` `.jpeg` `.webp` `.gif` `.bmp` `.tif` `.tiff` | 有可用视觉模型时结构化；否则使用 Windows OCR/占位 Markdown |
 
+PDF 文本在进入 AI 前会做质量闸门：空格比例过低、符号/控制字符异常或夹带 PDF/JPEG 二进制标记的输出会被丢弃，再走 OCR；OCR 仍不可读时导入失败，不会把乱码写进 `processed/`。
+
 面板里的 **Vision** 不可用时会显示具体原因，通常是当前默认模型不支持图片输入。可以在 DSH profile 的插件配置中设置 `ingestVisionProvider` / `ingestVisionModel` 指向可接收图片的模型；未配置视觉模型时图片退回内置 Windows OCR。
 
 完整包随附 PDF/Office 工具；缺失时插件仍能用纯 JS/系统能力降级运行。

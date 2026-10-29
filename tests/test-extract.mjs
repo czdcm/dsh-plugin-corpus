@@ -24,7 +24,7 @@ import path from 'node:path'
 import zlib from 'node:zlib'
 import { SUPPORTED_EXTENSIONS, bundledOfficecli, extractDocument, extractorAvailability, htmlToText } from '../plugin/lib/extract.js'
 import { extractOffice, extractXlsxFormulas } from '../plugin/lib/office.js'
-import { extractPdfText, ocrAvailable, pdfExtractorAvailability } from '../plugin/lib/pdf.js'
+import { extractPdfText, isUsablePdfText, ocrAvailable, pdfExtractorAvailability, pdfTextQuality } from '../plugin/lib/pdf.js'
 import { readZip } from '../plugin/lib/zip.js'
 
 let pass = 0
@@ -329,6 +329,11 @@ try {
   const jsText = extractPdfText(pdfBuffer)
   assert(jsText.includes('Corpus PDF Test'), '纯 JS 应抽出文字层第一行，实际：' + JSON.stringify(jsText))
   assert(jsText.includes('Second line of PDF text.'), '纯 JS 应抽出文字层第二行')
+  assert(isUsablePdfText(jsText), '正常 PDF 文字层应通过质量检查')
+  assert(!isUsablePdfText('\f\f\f\f\f\f\f\f\f\f'), '只有换页符的 PDF 输出应判为不可读')
+  assert(!isUsablePdfText('Y}r`47y6wRUCKnsG$OMUoMYs}f`eN _M]u,$Y[^v.nkv#?5{q=Vn,>5FM[ C#;EV{wK#>dSWc+s{7MEX5k!$.V/NMKE8_dZ0wN6A=S}8ah<m;}a"m^Xv,}$?XTkSAlo%:f?z{-~nQ~IO4I%'), '压缩流乱码应判为不可读')
+  assert(pdfTextQuality('短文本').ok === false && pdfTextQuality('短文本').reason === 'too-short', '短文本质量结果应标记 too-short')
+  ok('PDF 文字质量闸门：正常文本 / 空换页 / 二进制乱码')
   const pdfDoc = await extractDocument(pdfFile)
   assert(pdfDoc.kind === 'text' && pdfDoc.format === 'pdf', 'PDF → kind:text / format:pdf')
   assert(pdfDoc.text.includes('Corpus PDF Test') && pdfDoc.text.includes('Second line of PDF text.'), 'extractDocument PDF 文本，extractor=' + pdfDoc.meta.extractor)

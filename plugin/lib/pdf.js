@@ -109,6 +109,68 @@ export function extractPdfText(buffer) {
     .trim()
 }
 
+/**
+ * 判断 PDF 文字层是否像可读正文。
+ * 压缩流/对象流被误当文本时会出现大量符号、缺少空格，并夹带 PDF/JPEG 标记；
+ * 这类结果必须在 OCR 兜底前丢弃，不能写进 processed。
+ */
+export function pdfTextQuality(value) {
+  const raw = String(value || '')
+  const text = raw.trim()
+  if (text.length < 40) {
+    return { ok: false, reason: 'too-short', length: text.length, spaceRatio: 0, symbolRatio: 0, binaryHits: 0 }
+  }
+  const sample = text.slice(0, 200000)
+  const chars = Array.from(sample)
+  let letters = 0
+  let digits = 0
+  let spaces = 0
+  let symbols = 0
+  let controls = 0
+  let longestRun = 0
+  let run = 0
+  for (const char of chars) {
+    const code = char.codePointAt(0)
+    if (/\s/.test(char)) {
+      spaces += 1
+      run = 0
+    } else {
+      if (code < 32) controls += 1
+      if (/[A-Za-z\u4e00-\u9fff]/u.test(char)) letters += 1
+      else if (/[0-9]/.test(char)) digits += 1
+      else symbols += 1
+      run += 1
+      if (run > longestRun) longestRun = run
+    }
+  }
+  const total = chars.length || 1
+  const spaceRatio = spaces / total
+  const symbolRatio = symbols / total
+  const controlRatio = controls / total
+  const binaryHits = (sample.match(/Adobe_CM|JFIF|endstream|FlateDecode|beginbfchar|endbfchar|%PDF-|obj\s*<<|xref/gi) || []).length
+  let reason = null
+  if (binaryHits >= 2) reason = 'pdf-binary-markers'
+  else if (controlRatio > 0.01) reason = 'control-characters'
+  else if (spaceRatio < 0.04 && symbolRatio > 0.22) reason = 'low-space-high-symbols'
+  else if (symbolRatio > 0.38) reason = 'high-symbols'
+  else if ((letters + digits) / total < 0.25) reason = 'low-letters'
+  else if (longestRun > 400 && spaceRatio < 0.08) reason = 'long-unbroken-runs'
+  return {
+    ok: reason === null,
+    reason,
+    length: text.length,
+    spaceRatio: Number(spaceRatio.toFixed(4)),
+    symbolRatio: Number(symbolRatio.toFixed(4)),
+    controlRatio: Number(controlRatio.toFixed(4)),
+    binaryHits,
+    longestRun,
+  }
+}
+
+export function isUsablePdfText(value) {
+  return pdfTextQuality(value).ok
+}
+
 export function findPowerShell() {
   const candidates = [
     process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : '',
