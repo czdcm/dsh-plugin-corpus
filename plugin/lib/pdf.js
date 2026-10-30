@@ -76,29 +76,47 @@ function textFromContent(content) {
   return parts.join('')
 }
 
-function streamChunks(latin1) {
+function streamChunks(latin1, options = {}) {
+  const deadline = Math.max(0, Number(options.deadline) || 0)
   const chunks = []
   const marker = /(?:^|[\r\n])stream\r?\n/g
   let match
   while ((match = marker.exec(latin1)) !== null) {
+    // 扫描版 PDF 里绝大多数体积是图片流；纯 JS 解析对它们没有意义，
+    // 还会把 24 MB 的 JPEG 当成文本解码（实测可卡死主线程十几分钟）。
+    if (deadline > 0 && Date.now() > deadline) break
     const dataStart = match.index + match[0].length
     const end = latin1.indexOf('endstream', dataStart)
     if (end < 0) continue
     const dictionary = latin1.slice(Math.max(0, match.index - 800), match.index)
+    if (/\/DCTDecode|\/JPXDecode|\/CCITTFaxDecode|\/JBIG2Decode/.test(dictionary)) continue
     const raw = latin1.slice(dataStart, end)
+    if (raw.length > 16 * 1024 * 1024) continue
     let buffer = Buffer.from(raw, 'latin1')
     if (/\/FlateDecode/.test(dictionary)) {
       try { buffer = zlib.inflateSync(buffer) } catch { /* 不是有效 deflate，跳过 */ }
     }
     const text = buffer.toString('latin1')
+    if (text.length > 8 * 1024 * 1024) continue
     if (/\bTj\b|\bTJ\b/.test(text)) chunks.push(text)
   }
   return chunks
 }
 
-export function extractPdfText(buffer) {
+/**
+ * 从 PDF 内容流里直接抽文字（纯 JS 兜底，不依赖外部程序）。
+ *
+ * v1.4.3：加时间预算并跳过图片流。扫描件/大 PDF 上旧实现会同步解码所有流，
+ * 实测 24 MB 扫描书可占满主线程十几分钟；现在最多跑 maxMs，超时返回已抽到的部分。
+ *
+ * @param {Buffer} buffer PDF 文件内容。
+ * @param {{maxMs?: number}} [options] 时间预算，默认 3000ms。
+ * @returns {string} 抽到的文本（可能为空）。
+ */
+export function extractPdfText(buffer, options = {}) {
+  const maxMs = Math.max(50, Number(options.maxMs) || 3000)
   const latin1 = buffer.toString('latin1')
-  const chunks = streamChunks(latin1)
+  const chunks = streamChunks(latin1, { deadline: Date.now() + maxMs })
   if (chunks.length === 0) return ''
   const text = chunks.map(textFromContent).join('\n')
   return text

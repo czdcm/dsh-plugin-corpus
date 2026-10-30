@@ -30,6 +30,10 @@ const OFFICE_EXTS = new Set(['.docx', '.xlsx', '.pptx'])
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tif', '.tiff'])
 const MAX_TEXT_CHARS = 8 * 1024 * 1024
 const MAX_FILE_BYTES = 256 * 1024 * 1024
+/** 超过这个体积的 PDF 不再做纯 JS 文字层解析（扫描件里全是图片流，解析既慢又无意义）。 */
+const PDF_JS_PARSE_MAX_BYTES = 12 * 1024 * 1024
+/** 纯 JS 解析的硬时间预算，避免在大 PDF 上占满宿主主线程。 */
+const PDF_JS_PARSE_MAX_MS = 3000
 
 const IMAGE_MEDIA = {
   '.png': 'image/png',
@@ -424,6 +428,7 @@ export async function extractDocument(file, options = {}) {
     }
   } else if (ext === '.pdf') {
     const buffer = await fs.promises.readFile(file)
+    const canOcr = ocrAvailable()
     text = ''
     let rejectedText = ''
     if (pdfExtractorAvailability().bundled) {
@@ -441,17 +446,23 @@ export async function extractDocument(file, options = {}) {
       }
     }
     if (!isUsablePdfText(text)) {
-      const candidate = extractPdfText(buffer)
-      if (isUsablePdfText(candidate)) {
-        text = candidate
-        extractor = 'pdf-js'
-      } else if (candidate.trim() !== '') {
-        rejectedText = candidate
-        warnings.push('纯 JS PDF 文字层不可读，已忽略')
+      if (buffer.length > PDF_JS_PARSE_MAX_BYTES && canOcr) {
+        // 扫描版大 PDF：纯 JS 解析会把每个 JPEG 流都当文本扫一遍，实测 24 MB 的书
+        // 能占满主线程 10 分钟以上，直接交给 OCR 子进程（异步、不堵事件循环）。
+        warnings.push(`PDF 较大（${Math.round(buffer.length / 1024 / 1024)} MB），跳过纯 JS 文字层解析，直接尝试 OCR`)
+      } else {
+        const candidate = extractPdfText(buffer, { maxMs: PDF_JS_PARSE_MAX_MS })
+        if (isUsablePdfText(candidate)) {
+          text = candidate
+          extractor = 'pdf-js'
+        } else if (candidate.trim() !== '') {
+          rejectedText = candidate
+          warnings.push('纯 JS PDF 文字层不可读，已忽略')
+        }
       }
     }
     if (!isUsablePdfText(text)) {
-      if (ocrAvailable()) {
+      if (canOcr) {
         try {
           const ocrText = await runWindowsOcr(file, 'pdf')
           if (isUsablePdfText(ocrText)) {

@@ -335,6 +335,35 @@ try {
   assert(pdfTextQuality('短文本').ok === false && pdfTextQuality('短文本').reason === 'too-short', '短文本质量结果应标记 too-short')
   assert(normalizeOcrText('机 械 设 计 基 础 （ 第 五 版 ）') === '机械设计基础（第五版）', 'OCR 中文逐字空格应合并')
   ok('PDF 文字质量闸门：正常文本 / 空换页 / 二进制乱码 / OCR 中文空格')
+
+  // v1.4.3：扫描版大 PDF 的纯 JS 兜底必须“便宜”——跳过图片流 + 时间预算，
+  // 否则 24 MB 的扫描书会把宿主主线程占满十几分钟（导入卡死、历史加载不出来的根因）。
+  {
+    const imageHeavy = Buffer.concat([
+      Buffer.from('%PDF-1.4\n', 'latin1'),
+      Buffer.from('5 0 obj\n<< /Length 900000 /Filter /DCTDecode >>\nstream\n', 'latin1'),
+      Buffer.from('(FAKE IMAGE TEXT) Tj\n'.repeat(50000), 'latin1'),
+      Buffer.from('\nendstream\nendobj\n', 'latin1'),
+      Buffer.from('6 0 obj\n<< /Length 60 >>\nstream\nBT\n(Real text line) Tj\nET\n', 'latin1'),
+      Buffer.from('endstream\nendobj\n', 'latin1'),
+    ])
+    const started = Date.now()
+    const got = extractPdfText(imageHeavy, { maxMs: 2000 })
+    const elapsed = Date.now() - started
+    assert(!got.includes('FAKE IMAGE TEXT'), 'DCTDecode 图片流不应被当作文本解析')
+    assert(got.includes('Real text line'), '普通文字流仍应被抽出，实际：' + JSON.stringify(got.slice(0, 80)))
+    assert(elapsed < 1000, '图片流应被跳过，实际耗时 ' + elapsed + 'ms')
+
+    const manyStreams = Buffer.concat([
+      Buffer.from('%PDF-1.4\n', 'latin1'),
+      Buffer.from(Array.from({ length: 3000 }, (_, index) => `${index + 1} 0 obj\n<< /Length 40 >>\nstream\nBT\n(Line ${index}) Tj\nET\nendstream\nendobj\n`).join(''), 'latin1'),
+    ])
+    const budgetStart = Date.now()
+    extractPdfText(manyStreams, { maxMs: 50 })
+    const budgetMs = Date.now() - budgetStart
+    assert(budgetMs < 2000, '纯 JS 解析应受时间预算约束，实际 ' + budgetMs + 'ms')
+    ok('大 PDF 兜底护栏：跳过 DCT/JPX 图片流 + 时间预算（图片流 ' + elapsed + 'ms，预算 ' + budgetMs + 'ms）')
+  }
   const pdfDoc = await extractDocument(pdfFile)
   assert(pdfDoc.kind === 'text' && pdfDoc.format === 'pdf', 'PDF → kind:text / format:pdf')
   assert(pdfDoc.text.includes('Corpus PDF Test') && pdfDoc.text.includes('Second line of PDF text.'), 'extractDocument PDF 文本，extractor=' + pdfDoc.meta.extractor)

@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-corpus",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "全局语料库：内容放在一个可整体搬走的根目录，插件按工作区/会话/路径授权，提供检索、按行读取、文档导入、内置小代理结构化、仓库/会话总结接口、后台重建、Web GUI 面板与右栏权限管理。",
   "license": "GPL-2.0-or-later",
   "type": "module",
