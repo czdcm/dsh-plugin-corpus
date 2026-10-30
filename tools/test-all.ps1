@@ -1,4 +1,4 @@
-﻿# 跑 dsh-plugin-corpus v1.4.1 的全部本地验收（不需要重启 DSH）。
+﻿# 跑 dsh-plugin-corpus v1.4.2 的全部本地验收（不需要重启 DSH）。
 # 用法：powershell -NoProfile -ExecutionPolicy Bypass -File tools\test-all.ps1
 $ErrorActionPreference = 'Stop'
 
@@ -42,6 +42,11 @@ Write-Host ''
 Write-Host '== v1.1/v1.2/v1.3 验收（临时语料） =='
 & $Node tests\test-corpus-v2.mjs
 if ($LASTEXITCODE -ne 0) { throw 'test-corpus-v2.mjs 失败' }
+
+Write-Host ''
+Write-Host '== v1.4.2 性能护栏（让出 / 输出上限 / TTL 缓存 / 导入停顿） =='
+& $Node tests\test-perf.mjs
+if ($LASTEXITCODE -ne 0) { throw 'test-perf.mjs 失败' }
 
 Write-Host ''
 Write-Host '== 策略/权限/18 路由 =='

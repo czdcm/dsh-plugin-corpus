@@ -60,9 +60,14 @@ function expectThrows(fn, label, needle) {
   return error
 }
 
-async function expectRejects(value, label) {
-  try { await value } catch { return }
-  throw new Error(`应当被拒绝却成功了：${label}`)
+async function expectRejects(value, label, needle) {
+  let error = null
+  try { await value } catch (caught) { error = caught }
+  if (error === null) throw new Error(`应当被拒绝却成功了：${label}`)
+  if (needle && !String(error && error.message).includes(needle)) {
+    throw new Error(`拒绝原因不符（${label}）：期望包含「${needle}」，实际「${error && error.message}」`)
+  }
+  return error
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +175,7 @@ try {
     try { fs.symlinkSync(outside, path.join(src, 'junction-in.md'), 'junction'); srcJunction = true } catch { /* ignore */ }
   }
 
-  const importedDir = importInto(root, { source: src, collection: 'imported', prefix: 'inbox' })
+  const importedDir = await importInto(root, { source: src, collection: 'imported', prefix: 'inbox' })
   assert(importedDir.ok === true && importedDir.collection === 'imported', 'importInto 应成功且 collection=imported')
   assert(importedDir.source === path.resolve(src), 'source 应解析成绝对路径')
   assert(importedDir.imported === 2, '目录导入应只导入 2 个文本文件，实际 ' + importedDir.imported)
@@ -196,7 +201,7 @@ try {
 
   const one = path.join(tmp, 'one.txt')
   fs.writeFileSync(one, 'single file import target\n')
-  const importedOne = importInto(root, { source: one, collection: 'imported', prefix: 'solo' })
+  const importedOne = await importInto(root, { source: one, collection: 'imported', prefix: 'solo' })
   assert(importedOne.imported === 1 && importedOne.files[0] === 'imported/solo/one.txt', '单文件导入应进 prefix 子目录')
   assert(fs.readFileSync(path.join(root, 'imported', 'solo', 'one.txt'), 'utf8').includes('single file'), '单文件内容应落盘')
   ok('单文件导入 + 子目录前缀')
@@ -205,7 +210,7 @@ try {
   fs.mkdirSync(extsrc, { recursive: true })
   fs.writeFileSync(path.join(extsrc, 'keep.md'), '# Keep\n\nkeep me\n')
   fs.writeFileSync(path.join(extsrc, 'drop.txt'), 'drop me\n')
-  const importedExt = importInto(root, { source: extsrc, collection: 'imported', prefix: 'ext', extensions: ['md'] })
+  const importedExt = await importInto(root, { source: extsrc, collection: 'imported', prefix: 'ext', extensions: ['md'] })
   assert(importedExt.imported === 1 && importedExt.files[0] === 'imported/ext/keep.md', 'extensions 过滤后应只导入 keep.md')
   assert(!fs.existsSync(path.join(root, 'imported', 'ext', 'drop.txt')), 'drop.txt 不应被导入')
   ok('extensions 过滤（支持不带点的写法）')
@@ -213,15 +218,15 @@ try {
   const movable = path.join(tmp, 'movable', 'moved.md')
   fs.mkdirSync(path.dirname(movable), { recursive: true })
   fs.writeFileSync(movable, '# Moved\n\nmoved file\n')
-  const importedMove = importInto(root, { source: movable, collection: 'imported', prefix: 'moved', move: true })
+  const importedMove = await importInto(root, { source: movable, collection: 'imported', prefix: 'moved', move: true })
   assert(importedMove.imported === 1 && importedMove.files[0] === 'imported/moved/moved.md', 'move 导入应复制到目标')
   assert(!fs.existsSync(movable), 'move=true 应删除源文件')
   assert(fs.existsSync(path.join(root, 'imported', 'moved', 'moved.md')), 'move 导入的目标文件应存在')
   ok('move 语义：复制成功后再删除源文件')
 
   for (const bad of ['', '..', '.hidden', 'bad/name', 'a/b', 'x'.repeat(65)]) {
-    expectThrows(
-      () => importInto(root, { source: one, collection: bad }),
+    await expectRejects(
+      importInto(root, { source: one, collection: bad }),
       '非法集合名 ' + JSON.stringify(bad.length > 20 ? bad.slice(0, 8) + '…' : bad),
     )
   }
@@ -230,27 +235,27 @@ try {
   const localizedCollection = '结构力学 教材（第一册）'
   const localizedRoot = path.join(tmp, 'localized-corpus')
   fs.mkdirSync(localizedRoot, { recursive: true })
-  importInto(localizedRoot, { source: one, collection: localizedCollection })
+  await importInto(localizedRoot, { source: one, collection: localizedCollection })
   assert(fs.existsSync(path.join(localizedRoot, localizedCollection, path.basename(one))), '中文/空格/全角括号集合名应能导入')
   ok('集合名支持中文、空格与常用符号：' + localizedCollection)
 
   for (const bad of ['..', 'a/../b', 'a//b']) {
-    expectThrows(() => importInto(root, { source: one, collection: 'imported', prefix: bad }), '非法 prefix ' + JSON.stringify(bad))
+    await expectRejects(importInto(root, { source: one, collection: 'imported', prefix: bad }), '非法 prefix ' + JSON.stringify(bad))
   }
   ok('prefix 拒绝 .. 与空路径段')
 
   const driveRoot = path.parse(tmp).root
   const escapePrefix = driveRoot.replace(/\\/g, '/') + 'dsh-corpus-escape-' + Math.random().toString(36).slice(2, 10)
   const escapedTarget = path.resolve(escapePrefix + '/one.txt')
-  const escapeResult = importInto(root, { source: one, collection: 'imported', prefix: escapePrefix })
+  const escapeResult = await importInto(root, { source: one, collection: 'imported', prefix: escapePrefix })
   assert(escapeResult.imported === 0 && escapeResult.files.length === 0, '绝对 prefix 不应导入任何文件')
   assert(!fs.existsSync(escapedTarget), '绝对 prefix 不应把文件写到集合目录之外：' + escapedTarget)
   ok('目标路径不越界：绝对 prefix 被丢弃')
 
-  expectThrows(() => importInto(root, { source: path.join(tmp, 'does-not-exist.md'), collection: 'imported' }), '不存在的源路径', '找不到源路径')
+  await expectRejects(importInto(root, { source: path.join(tmp, 'does-not-exist.md'), collection: 'imported' }), '不存在的源路径', '找不到源路径')
   if (symlink.file || symlink.junction) {
     const linkSource = symlink.file ? path.join(root, 'alpha', 'link.md') : path.join(root, 'alpha', 'linkdir.md')
-    expectThrows(() => importInto(root, { source: linkSource, collection: 'imported' }), '符号链接源路径', '不允许导入符号链接')
+    await expectRejects(importInto(root, { source: linkSource, collection: 'imported' }), '符号链接源路径', '不允许导入符号链接')
     ok('源路径是符号链接时拒绝导入')
   } else {
     skipTest('源路径是符号链接时拒绝导入', '本机无法创建符号链接/junction')
@@ -725,13 +730,13 @@ try {
   for (let index = 0; index < 105; index++) {
     fs.writeFileSync(path.join(bulk, 'doc-' + String(index).padStart(3, '0') + '.md'), '# Bulk ' + index + '\n\nbulk content ' + index + '\n')
   }
-  const bulkResult = importInto(root, { source: bulk, collection: 'bulk' })
+  const bulkResult = await importInto(root, { source: bulk, collection: 'bulk' })
   assert(bulkResult.ok === true && bulkResult.imported === 105 && bulkResult.fileCount === 105, '应导入 105 个文件，fileCount=105')
   assert(bulkResult.files.length === 100 && bulkResult.filesTruncated === true, 'files 应限流为 100 条并标记 filesTruncated')
   assert(bulkResult.truncated === false, '未达 maxFiles 上限，不应 truncated')
   ok('importInto 输出限流：fileCount / files≤100 / filesTruncated')
 
-  const cappedResult = importInto(root, { source: bulk, collection: 'bulk', prefix: 'cap', maxFiles: 2 })
+  const cappedResult = await importInto(root, { source: bulk, collection: 'bulk', prefix: 'cap', maxFiles: 2 })
   assert(cappedResult.imported === 2 && cappedResult.truncated === true && cappedResult.skipped === 103, 'maxFiles=2 时应导入 2 个、跳过 103 个并置 truncated')
   assert(cappedResult.notes.some((note) => note.includes('上限')), 'notes 应记录单次上限')
   ok('importInto 单次上限：maxFiles 截断并计入 skipped/notes')

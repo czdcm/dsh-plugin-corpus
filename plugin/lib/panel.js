@@ -31,6 +31,7 @@ import {
   savePolicy,
 } from './policy.js'
 import { SUPPORTED_EXTENSIONS, extractorAvailability } from './extract.js'
+import { memoTtl } from './perf.js'
 import { migrateRoot, readRootState, rootStatePath } from './settings.js'
 import { deleteCollection, deleteDocument } from './trash.js'
 
@@ -229,6 +230,11 @@ function listGallery(root, collectionFilter = '', limit = 60) {
  * @returns [{kind:'exact', path, handler}]
  */
 export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }) {
+  // v1.4.2：面板每 1–2 秒轮询一次，重复扫描整个语料根没有必要。
+  // 1.5 秒 TTL 足以让「导入后立刻刷新」看到变化，同时把轮询成本压到接近 0。
+  const cachedCollections = memoTtl(() => collectionStatus(root), 1500)
+  const cachedFiles = memoTtl((collection) => listDocs(root, { collections: [collection], limit: 1000 }), 1500)
+  const cachedGallery = memoTtl((collection, limit) => listGallery(root, collection, limit), 1500)
   const guarded = (handler) => async (req, res) => {
     if (fromAnotherSite(req)) {
       sendJson(res, 403, { ok: false, error: '拒绝跨站请求' })
@@ -248,7 +254,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
     path: `${PANEL_PREFIX}/overview`,
     handler: guarded(async (req, res) => {
       if (req.method !== 'GET') { sendJson(res, 405, { ok: false, error: 'method not allowed' }); return }
-      const collections = collectionStatus(root)
+      const collections = cachedCollections()
       sendJson(res, 200, {
         ok: true,
         root,
@@ -269,7 +275,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
         sendJson(res, 404, { ok: false, error: `没有集合 ${collection}` })
         return
       }
-      const listed = listDocs(root, { collections: [collection], limit: 1000 })
+      const listed = cachedFiles(collection)
       const first = listed.collections[0] || { docs: 0, files: [] }
       sendJson(res, 200, { ok: true, collection, total: first.docs, files: first.files })
     }),
@@ -340,7 +346,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
     path: `${PANEL_PREFIX}/status`,
     handler: guarded(async (req, res) => {
       if (req.method !== 'GET') { sendJson(res, 405, { ok: false, error: 'method not allowed' }); return }
-      sendJson(res, 200, { ok: true, ...jobs.status(), collections: collectionStatus(root) })
+      sendJson(res, 200, { ok: true, ...jobs.status(), collections: cachedCollections() })
     }),
   })
 
@@ -378,7 +384,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
     path: `${PANEL_PREFIX}/import/targets`,
     handler: guarded(async (req, res) => {
       if (req.method !== 'GET') { sendJson(res, 405, { ok: false, error: 'method not allowed' }); return }
-      const collections = collectionStatus(root).map((item) => ({
+      const collections = cachedCollections().map((item) => ({
         name: item.name,
         backend: item.backend,
         docs: item.docs,
@@ -507,7 +513,7 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
       const collection = query.get('collection') || ''
       const limit = Math.max(1, Math.min(1000, Number(query.get('limit')) || 100))
       // listGallery 内部对 collection 做过滤；未知集合会得到空结果。
-      sendJson(res, 200, { ok: true, collection, limit, ...listGallery(root, collection, limit) })
+      sendJson(res, 200, { ok: true, collection, limit, ...cachedGallery(collection, limit) })
     }),
   })
 

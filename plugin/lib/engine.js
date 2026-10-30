@@ -14,11 +14,13 @@
  * 重建进度回调（onProgress）；读取路径做了 realpath/符号链接/扩展名加固。
  */
 import fs from 'node:fs'
+import fsp from 'node:fs/promises'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { DatabaseSync } from 'node:sqlite'
 import { collectionNameError, isValidCollectionName } from './collection-name.js'
+import { createSlicer } from './perf.js'
 
 export const META_DIR = '.corpus'
 export const TEXT_EXT = new Set(['.md', '.markdown', '.mdx', '.txt', '.rst', '.text', '.json', '.yaml', '.yml'])
@@ -551,18 +553,19 @@ export function stats(root) {
   }
 }
 
-function isBinaryFile(file) {
-  let fd
+/** 读前 8 KiB 判断是否含 NUL（二进制）。用文件句柄异步读，不占主线程。 */
+async function isBinaryFileAsync(file) {
+  let handle
   try {
-    fd = fs.openSync(file, 'r')
+    handle = await fsp.open(file, 'r')
     const buffer = Buffer.alloc(8192)
-    const read = fs.readSync(fd, buffer, 0, buffer.length, 0)
-    return buffer.subarray(0, read).includes(0)
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
+    return buffer.subarray(0, bytesRead).includes(0)
   } catch {
     return true
   } finally {
-    if (fd !== undefined) {
-      try { fs.closeSync(fd) } catch { /* 已关闭 */ }
+    if (handle) {
+      try { await handle.close() } catch { /* 已关闭 */ }
     }
   }
 }
@@ -578,15 +581,22 @@ function normalizePrefix(value) {
 /**
  * 把一个文件或目录导入 <root>/<collection>/。
  * 只复制普通文本文件；符号链接、隐藏项、超限与二进制文件跳过。
+ *
+ * v1.4.2：改为异步实现，并在逐文件循环里协作式让出事件循环。
+ * 一次导入几千个文件时，DSH 宿主（会话历史加载、面板轮询、其他工具调用）
+ * 不会再被整段同步复制卡死。
+ *
+ * @param {object} options source / collection / prefix / move / extensions / maxFiles / onProgress。
+ * @returns {Promise<object>} 导入结果（files 最多 100 条）。
  */
-export function importInto(root, options = {}) {
+export async function importInto(root, options = {}) {
   const collection = String(options.collection || '').trim()
   if (!isValidCollectionName(collection)) {
     throw new Error(collectionNameError(collection))
   }
   const source = path.resolve(String(options.source || ''))
   let sourceStat
-  try { sourceStat = fs.lstatSync(source) } catch { throw new Error(`找不到源路径：${source}`) }
+  try { sourceStat = await fsp.lstat(source) } catch { throw new Error(`找不到源路径：${source}`) }
   if (sourceStat.isSymbolicLink()) throw new Error('不允许导入符号链接')
   if (!sourceStat.isFile() && !sourceStat.isDirectory()) throw new Error('源路径既不是文件也不是目录')
 
@@ -604,19 +614,28 @@ export function importInto(root, options = {}) {
   const base = path.resolve(root, collection)
   const notes = []
   const files = []
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null
+  const slicer = createSlicer({ everyItems: 32, everyMs: 8 })
   let imported = 0
   let skipped = 0
   let bytes = 0
   let truncated = false
+  let seen = 0
 
-  const add = (file) => {
+  const report = () => {
+    if (!onProgress) return
+    try { onProgress({ imported, skipped, bytes, files: files.length }) } catch { /* 进度回调失败不影响导入 */ }
+  }
+
+  const add = async (file) => {
+    seen += 1
     if (files.length >= maxFiles) {
       if (!truncated) { truncated = true; notes.push(`达到单次上限 ${maxFiles} 个文件，其余跳过`) }
       skipped++
       return
     }
     let stat
-    try { stat = fs.lstatSync(file) } catch { skipped++; return }
+    try { stat = await fsp.lstat(file) } catch { skipped++; return }
     if (!stat.isFile() || stat.isSymbolicLink()) { skipped++; return }
     if (!extensions.has(path.extname(file).toLowerCase())) { skipped++; return }
     if (stat.size > settings.maxFileBytes) {
@@ -624,7 +643,7 @@ export function importInto(root, options = {}) {
       if (notes.length < 50) notes.push(`跳过超限文件（${stat.size} 字节）：${path.basename(file)}`)
       return
     }
-    if (isBinaryFile(file)) {
+    if (await isBinaryFileAsync(file)) {
       skipped++
       if (notes.length < 50) notes.push(`跳过二进制文件：${path.basename(file)}`)
       return
@@ -636,10 +655,10 @@ export function importInto(root, options = {}) {
     const dest = path.resolve(base, targetRel)
     if (dest !== base && !dest.startsWith(base + path.sep)) { skipped++; return }
     try {
-      fs.mkdirSync(path.dirname(dest), { recursive: true })
+      await fsp.mkdir(path.dirname(dest), { recursive: true })
       if (fs.existsSync(dest) && notes.length < 50) notes.push(`覆盖：${targetRel}`)
-      fs.copyFileSync(file, dest)
-      if (move) { try { fs.rmSync(file, { force: true }) } catch { /* 复制成功就算导入 */ } }
+      await fsp.copyFile(file, dest)
+      if (move) { try { await fsp.rm(file, { force: true }) } catch { /* 复制成功就算导入 */ } }
       imported++
       bytes += stat.size
       files.push(path.posix.join(collection, targetRel))
@@ -650,25 +669,28 @@ export function importInto(root, options = {}) {
   }
 
   if (sourceStat.isDirectory()) {
-    const walk = (dir, depth) => {
+    const walk = async (dir, depth) => {
       if (depth > 12) return
       let entries
-      try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+      try { entries = await fsp.readdir(dir, { withFileTypes: true }) } catch { return }
       for (const entry of entries) {
         if (entry.name.startsWith('.') || entry.isSymbolicLink()) continue
         const full = path.join(dir, entry.name)
         if (entry.isDirectory()) {
           if (SKIP_DIRS.has(entry.name)) continue
-          walk(full, depth + 1)
+          await walk(full, depth + 1)
         } else if (entry.isFile()) {
-          add(full)
+          await add(full)
         }
+        await slicer.slice()
+        if (seen > 0 && seen % 256 === 0) report()
       }
     }
-    walk(source, 0)
+    await walk(source, 0)
   } else {
-    add(source)
+    await add(source)
   }
+  report()
 
   return {
     ok: true,

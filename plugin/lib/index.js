@@ -31,6 +31,7 @@ import { createStructureService } from './structure.js'
 import { buildSessionTranscript } from './session-transcript.js'
 import { expandRoot } from './settings.js'
 import { deleteCollection, deleteDocument } from './trash.js'
+import { boundJson, createSlicer } from './perf.js'
 
 export const name = 'corpus'
 export const inject = ['tools']
@@ -47,6 +48,8 @@ export const Config = Schema.object({
   ingestMaxChars: Schema.number().min(2000).max(200000).default(24000),
   ingestTimeoutMs: Schema.number().min(10000).max(600000).default(120000),
   structureMaxChars: Schema.number().min(4000).max(200000).default(48000),
+  maxToolOutputChars: Schema.number().min(2000).max(200000).default(24000),
+  perfLogMs: Schema.number().min(0).max(60000).default(250),
 })
 
 function log(ctx, level, message) {
@@ -81,7 +84,15 @@ export function apply(ctx, config) {
   const promptOrder = Number(config.promptOrder) || 9000
   const maxPromptFiles = Number(config.maxPromptFiles) || 0
   const maxPromptChars = Number(config.maxPromptChars) || 8000
-  const jobs = createJobRunner({ root })
+  const maxToolOutputChars = Number(config.maxToolOutputChars) || 24000
+  const perfLogMs = Number.isFinite(Number(config.perfLogMs)) ? Math.max(0, Number(config.perfLogMs)) : 250
+  /** 工具返回值统一走这里：硬上限，避免单次调用把超大文本写进会话历史。 */
+  const reply = (payload) => boundJson(payload, maxToolOutputChars)
+  /** 提示词目录缓存（默认 60 秒）；导入/重建/删除后主动失效。 */
+  const summaries = new Map()
+  const promptCacheTtlMs = 60000
+  const invalidatePrompt = () => { summaries.clear() }
+  const jobs = createJobRunner({ root, log })
   const ingestAgent = createIngestAgent({ ctx, config, log })
   const ingest = createIngestManager({ root, dshHome, reindex: jobs, agent: ingestAgent, config, log })
   const structurer = createStructureService({ root, agent: ingestAgent, config, reindex: jobs, log })
@@ -135,7 +146,7 @@ export function apply(ctx, config) {
       const scope = scopeOf(exec && exec.agent)
       const names = namesFor(scope, args)
       if (names.length === 0) {
-        return JSON.stringify({ ok: false, error: '当前会话没有可访问的语料集合', root })
+        return reply({ ok: false, error: '当前会话没有可访问的语料集合', root })
       }
       // 有集合但索引为空：启动后台重建，先告诉模型“在建”，不要同步阻塞。
       for (const name of names) {
@@ -145,7 +156,7 @@ export function apply(ctx, config) {
             const started = jobs.start({ names: [name] })
             const job = started.job || null
             const covered = job !== null && Array.isArray(job.names) && job.names.includes(name)
-            return JSON.stringify({
+            return reply({
               ok: false,
               building: covered,
               jobId: job ? job.id : null,
@@ -157,7 +168,7 @@ export function apply(ctx, config) {
           }
         } catch { /* 建索引失败就让检索自己报错 */ }
       }
-      return JSON.stringify(search(root, { collections: names, query: args.query, limit: args.limit }))
+      return reply(search(root, { collections: names, query: args.query, limit: args.limit }))
     },
   }))
 
@@ -174,7 +185,7 @@ export function apply(ctx, config) {
       const scope = scopeOf(exec && exec.agent)
       const rel = String((args && args.path) || '')
       if (!scope.allow(rel)) throw new Error(`没有访问 ${rel} 的权限`)
-      return JSON.stringify(readFile(root, rel, args || {}))
+      return reply(readFile(root, rel, args || {}))
     },
   }))
 
@@ -189,7 +200,7 @@ export function apply(ctx, config) {
     async execute(args, exec) {
       const scope = scopeOf(exec && exec.agent)
       const names = namesFor(scope, args)
-      return JSON.stringify(listDocs(root, { collections: names, limit: args && args.limit }))
+      return reply(listDocs(root, { collections: names, limit: args && args.limit }))
     },
   }))
 
@@ -204,7 +215,7 @@ export function apply(ctx, config) {
     async execute(args, exec) {
       const scope = scopeOf(exec && exec.agent)
       const names = namesFor(scope, args)
-      return JSON.stringify(buildCatalog(root, names, { limit: args && args.limit }))
+      return reply(buildCatalog(root, names, { limit: args && args.limit }))
     },
   }))
 
@@ -222,7 +233,7 @@ export function apply(ctx, config) {
       if (!scope.allow(rel)) throw new Error(`没有访问 ${rel} 的权限`)
       const outline = ensureOutline(root, rel, { title: path.basename(rel).replace(/\.[^.]+$/, '') })
       if (outline === null) {
-        return JSON.stringify({ ok: false, error: '无法生成目录；请确认该文件是 processed 下的文本文件', path: rel })
+        return reply({ ok: false, error: '无法生成目录；请确认该文件是 processed 下的文本文件', path: rel })
       }
       const depth = Math.max(1, Math.min(3, Number(args && args.depth) || 2))
       const compact = {
@@ -254,7 +265,7 @@ export function apply(ctx, config) {
         })),
         hint: '用 corpus_read（path + from + lines）读取目录给出的行号范围。',
       }
-      return JSON.stringify(compact)
+      return reply(compact)
     },
   }))
 
@@ -272,7 +283,8 @@ export function apply(ctx, config) {
       if (names.length === 0) throw new Error('当前会话没有可访问的语料集合，无法重建')
       const result = jobs.start({ names, force: args && args.force === true })
       if (result.started) {
-        return JSON.stringify({
+        invalidatePrompt()
+        return reply({
           ok: true,
           started: true,
           jobId: result.job.id,
@@ -283,7 +295,7 @@ export function apply(ctx, config) {
         })
       }
       if (result.job) {
-        return JSON.stringify({
+        return reply({
           ok: false,
           started: false,
           busy: true,
@@ -294,7 +306,7 @@ export function apply(ctx, config) {
           hint: '已有重建任务在运行；等它结束后再启动，或用 corpus_status 查看进度。',
         })
       }
-      return JSON.stringify({
+      return reply({
         ok: false,
         started: false,
         busy: false,
@@ -316,9 +328,9 @@ export function apply(ctx, config) {
       if (args && typeof args.jobId === 'string' && args.jobId !== '') {
         const all = [...status.recent, ...(status.active ? [status.active] : [])]
         const job = all.find((item) => item.id === args.jobId) || null
-        return JSON.stringify({ ok: job !== null, job, error: job === null ? `找不到任务 ${args.jobId}` : undefined })
+        return reply({ ok: job !== null, job, error: job === null ? `找不到任务 ${args.jobId}` : undefined })
       }
-      return JSON.stringify({
+      return reply({
         ok: true,
         root,
         active: status.active,
@@ -352,16 +364,22 @@ export function apply(ctx, config) {
       const extensions = typeof args.extensions === 'string' && args.extensions.trim() !== ''
         ? args.extensions.split(',').map((item) => item.trim()).filter(Boolean)
         : undefined
-      const result = importInto(root, {
+      const startedAt = Date.now()
+      const result = await importInto(root, {
         source,
         collection,
         prefix: args.prefix,
         move: args.move === true,
         extensions,
       })
+      // 目录生成是同步 CPU 活：只对前 40 个文件“预热”，其余留给 corpus_outline 按需生成。
+      const eager = (Array.isArray(result.files) ? result.files : []).slice(0, 40)
       const outlineErrors = []
-      for (const rel of (Array.isArray(result.files) ? result.files : []).slice(0, 200)) {
-        try { writeOutline(root, rel, { collection }) } catch (error) { outlineErrors.push(`${rel}: ${error instanceof Error ? error.message : String(error)}`) }
+      const slicer = createSlicer({ everyItems: 4, everyMs: 8 })
+      let outlinesGenerated = 0
+      for (const rel of eager) {
+        try { writeOutline(root, rel, { collection }); outlinesGenerated += 1 } catch (error) { outlineErrors.push(`${rel}: ${error instanceof Error ? error.message : String(error)}`) }
+        await slicer.slice()
       }
       if (outlineErrors.length > 0) result.outlineErrors = outlineErrors.slice(0, 10)
       let job = null
@@ -377,9 +395,15 @@ export function apply(ctx, config) {
           indexHint = '已导入；另一个 DSH 进程正在重建索引，已有任务结束后再 corpus_reindex。'
         }
       }
-      return JSON.stringify({
+      invalidatePrompt()
+      const elapsedMs = Date.now() - startedAt
+      if (elapsedMs >= perfLogMs) log(ctx, 'warn', `corpus_import 耗时 ${elapsedMs}ms（导入 ${result.imported} 个文件）`)
+      return reply({
         ok: true,
         ...result,
+        outlinesGenerated,
+        outlinesPending: Math.max(0, Number(result.fileCount || 0) - outlinesGenerated),
+        elapsedMs,
         jobId: job ? job.id : null,
         indexRunning: job !== null,
         hint: indexHint,
@@ -414,9 +438,10 @@ export function apply(ctx, config) {
         index: args.index !== false,
       })
       if (!result.started) {
-        return JSON.stringify({ ok: false, started: false, busy: true, job: result.job, hint: '已有导入任务在运行；等它结束后再试。' })
+        return reply({ ok: false, started: false, busy: true, job: result.job, hint: '已有导入任务在运行；等它结束后再试。' })
       }
-      return JSON.stringify({
+      invalidatePrompt()
+      return reply({
         ok: true,
         started: true,
         jobId: result.job.id,
@@ -473,7 +498,7 @@ export function apply(ctx, config) {
       const body = String(result.body || '')
       const limit = 24000
       const truncated = body.length > limit
-      return JSON.stringify({
+      return reply({
         ok: true,
         imported: result.imported,
         kind: result.kind,
@@ -547,9 +572,10 @@ export function apply(ctx, config) {
         reindex: args.reindex !== false,
       })
       const body = String(result.body || '')
+      if (result.imported) invalidatePrompt()
       const limit = 24000
       const truncated = body.length > limit
-      return JSON.stringify({
+      return reply({
         ok: true,
         imported: result.imported,
         kind: 'session',
@@ -599,11 +625,13 @@ export function apply(ctx, config) {
             const started = jobs.start({ names: [result.collection] })
             reindexJobId = started && started.job ? started.job.id : null
           } catch { reindexJobId = null }
-          return JSON.stringify({ ok: true, ...result, reindexJobId, hint: '已移入 .corpus/trash，可人工恢复；索引正在后台重建。' })
+          invalidatePrompt()
+          return reply({ ok: true, ...result, reindexJobId, hint: '已移入 .corpus/trash，可人工恢复；索引正在后台重建。' })
         }
         if (!scope.allow(collection)) throw new Error(`没有删除集合 ${collection} 的权限`)
         const result = deleteCollection(root, collection)
-        return JSON.stringify({ ok: true, ...result, hint: '集合已移入 .corpus/trash/collections，可人工恢复。' })
+        invalidatePrompt()
+        return reply({ ok: true, ...result, hint: '集合已移入 .corpus/trash/collections，可人工恢复。' })
       } catch (error) {
         throw new Error(error instanceof Error ? error.message : String(error))
       }
@@ -618,7 +646,7 @@ export function apply(ctx, config) {
     async execute(_args, exec) {
       const scope = scopeOf(exec && exec.agent)
       const policy = scope.policy
-      return JSON.stringify({
+      return reply({
         ok: true,
         root,
         accessFile: path.join(dshHome, ACCESS_FILE),
@@ -634,13 +662,12 @@ export function apply(ctx, config) {
   }))
 
   // ---- 提示词：集合 + 文档卡片 + 目录工具约定 ----
-  const summaries = new Map()
   const promptText = (agent) => {
     const scope = scopeOf(agent)
     if (scope.names.length === 0) return ''
     const key = [normalize(scope.subject.workspace), scope.subject.session, scope.names.join(','), maxPromptFiles, maxPromptChars].join('|')
     const hit = summaries.get(key)
-    if (hit && Date.now() - hit.at < 15000) return hit.text
+    if (hit && Date.now() - hit.at < promptCacheTtlMs) return hit.text
     let text = ''
     try {
       const listed = listDocs(root, { collections: scope.names, limit: 1000 })

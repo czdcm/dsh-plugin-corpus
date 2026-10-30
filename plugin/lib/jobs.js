@@ -27,9 +27,10 @@ function publicJob(job) {
 
 /**
  * @param root - 语料根目录。
+ * @param log - 可选日志函数 (level, message)。
  * @returns 管理器：start / status / wait / dispose。
  */
-export function createJobRunner({ root }) {
+export function createJobRunner({ root, log }) {
   const recent = []
   const waiters = new Map()
   let active = null
@@ -82,16 +83,27 @@ export function createJobRunner({ root }) {
       })
     } catch (error) {
       // 某些运行时不允许 worker_threads：退回主线程重建（会阻塞，但功能不丢）。
+      // v1.4.2：按集合分片并让出事件循环，避免一次全量重建把宿主卡死；同时打日志方便排查。
+      if (typeof log === 'function') {
+        log('warn', `索引重建 worker 不可用，退回主线程分片重建：${error instanceof Error ? error.message : String(error)}`)
+      }
       active = job
       setImmediate(async () => {
         try {
-          const { reindex } = await import('./engine.js')
-          const result = reindex(root, {
-            names: job.names,
-            force: job.force,
-            onProgress(progress) { job.progress = progress },
-          })
-          finish(job, 'done', { result })
+          const { reindex, collectionNames } = await import('./engine.js')
+          const names = job.names.length > 0 ? job.names : collectionNames(root)
+          const merged = { ok: true, root, ms: 0, collections: [] }
+          for (const name of names) {
+            const one = reindex(root, {
+              names: [name],
+              force: job.force,
+              onProgress(progress) { job.progress = progress },
+            })
+            if (Array.isArray(one.collections)) merged.collections.push(...one.collections)
+            merged.ms += Number(one.ms) || 0
+            await new Promise((resolve) => setImmediate(resolve))
+          }
+          finish(job, 'done', { result: merged })
         } catch (fallbackError) {
           finish(job, 'error', { error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError) })
         }
