@@ -1,4 +1,4 @@
-﻿# 打包可直接安装的 DSH 插件。
+# 打包可直接安装的 DSH 插件。
 # 只产出完整包：包含 OfficeCLI（Apache-2.0）与 pdftotext（GPL-2.0-or-later）及其许可证/源码说明。
 # v1.5.0 起移除了纯 JS PDF 解析兜底，PDF 文字层依赖随包 pdftotext，因此不再提供 -WithoutPdftotext 构建。
 # 产物结构：dsh-plugin-corpus/{package.json,cordis.patch.yml,LICENSE,THIRD_PARTY_NOTICES.md,lib/,vendor/,README.md}
@@ -29,6 +29,7 @@ try {
   Copy-Item (Join-Path $PluginDir 'package.json') $Root
   Copy-Item (Join-Path $PluginDir 'cordis.patch.yml') $Root
   Copy-Item (Join-Path $PluginDir 'README.md') $Root
+  Copy-Item (Join-Path $PluginDir 'MODEL_GUIDE.md') $Root
   Copy-Item (Join-Path $PluginDir 'lib') (Join-Path $Root 'lib') -Recurse
   Copy-Item (Join-Path $PluginDir 'vendor') (Join-Path $Root 'vendor') -Recurse
   foreach ($doc in @('LICENSE', 'THIRD_PARTY_NOTICES.md', 'INSTALL.md')) {

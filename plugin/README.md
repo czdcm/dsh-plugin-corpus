@@ -11,6 +11,8 @@ dsh-plugin-corpus 是 **DeepSeek Harness (DSH)** 的文件语料库插件。
 
 当前版本：**1.5.0**。
 
+模型操作指南（给模型看）：[`MODEL_GUIDE.md`](MODEL_GUIDE.md)。
+
 ---
 
 ## 1. 安装与启用
