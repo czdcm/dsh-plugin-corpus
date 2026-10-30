@@ -52,7 +52,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 # 完全重启 DSH
 ```
 
-`tools\deploy.ps1` 会把 `plugin/` 复制到 DSH 插件目录。GitHub 源码 clone 不含 vendor 二进制；完整安装请用 Release 包，源码开发前先把 vendor 文件放回 `plugin/vendor/`，否则脚本会提示降级。
+`tools\deploy.ps1` 会把 `plugin/` 复制到 DSH 插件目录。GitHub 源码 clone 不含 vendor 二进制；完整安装请用 Release 包，源码开发前先把 vendor 文件放回 `plugin/vendor/`，否则脚本会给出警告（Office 回退纯 JS；PDF 文字层不可用，只能整本 OCR）。
 
 ---
 

@@ -413,7 +413,7 @@ export function apply(ctx, config) {
 
   ctx.tools.register(defineTool({
     name: 'corpus_ingest',
-    description: '把本机文档（HTML/PDF/DOCX/XLSX/PPTX/图片/文本）提取成 Markdown，可选由内置摄取小代理总结/结构化后导入语料集合。启动后台任务；用 corpus_status 或 Web 面板查看进度。',
+    description: '把本机文档（HTML/PDF/DOCX/XLSX/PPTX/图片/文本）提取成 Markdown，可选由内置摄取小代理总结/结构化后导入语料集合。PDF 逐页提取：文字层用随包 pdftotext，缺文字层/乱码的页逐页用 Windows OCR 补齐。启动后台任务；用 corpus_status 或 Web 面板查看进度。',
     parameters: {
       path: { type: 'string', required: true, description: '本机文件或目录；相对路径按当前会话工作区解析' },
       collection: { type: 'string', required: true, description: '目标集合名，必须是本会话有权限的集合' },
