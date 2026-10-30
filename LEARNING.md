@@ -77,8 +77,7 @@
 - 测试：**纯 Node `.mjs` 脚本**，自写 `assert/ok`，`os.tmpdir()` 造临时数据；`tools/test-all.ps1` 统一跑。
 - 部署：`tools/deploy.ps1` 把 `plugin/`（含 `vendor/`）复制到 `~/.dsh/plugins/dsh-plugin-corpus`。
 - 打包：
-  - `tools/package-plugin.ps1` → 可安装插件 zip（默认含完整 vendor 与许可证）
-  - `tools/package-plugin.ps1 -WithoutPdftotext` → 本地可选的纯 JS/OCR 构建（官方 Release 只发布完整包）
+  - `tools/package-plugin.ps1` → 可安装插件 zip（唯一形态：含完整 vendor 与许可证）
 
 ---
 
@@ -102,7 +101,7 @@ dsh-plugin-corpus/
 │     ├─ extract.js         19 种格式 → 文本/图片；HTML、Office、PDF、OCR 调度
 │     ├─ zip.js             纯 JS ZIP 中央目录读取（deflate）
 │     ├─ office.js          纯 JS docx/xlsx/pptx XML 解析兜底
-│     ├─ pdf.js             纯 JS PDF 文字层 + PowerShell OCR + 随包 pdftotext
+│     ├─ pdf.js             随包 pdftotext + 逐页质量闸门 + PowerShell OCR
 │     ├─ ingest.js          导入任务：路径/上传、per-import 布局、AI 回退、重建
 │     ├─ ingest-agent.js    内置小代理：固定 system prompt 的单轮 LLM 调用（文本/图片）
 │     ├─ structure.js       主会话接口：仓库/目录/文件/文本 → 结构化 processed
@@ -370,11 +369,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\test-all.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 # 然后完全重启 DSH
 
-# 打包：可安装插件 zip（默认含完整 vendor 与许可证）
+# 打包：可安装插件 zip（唯一形态：含完整 vendor 与许可证）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1
-
-# 可选：本地构建不含 GPL pdftotext 的包（官方 Release 只发布完整包）
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1 -WithoutPdftotext
 ```
 
 常用路径：

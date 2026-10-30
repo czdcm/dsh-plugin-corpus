@@ -1,11 +1,13 @@
-﻿param(
+param(
   [Parameter(Mandatory = $true)][string]$Path,
-  [ValidateSet('image', 'pdf')][string]$Mode = 'image'
+  [ValidateSet('image', 'pdf')][string]$Mode = 'image',
+  [string]$Pages = ''
 )
 
 # dsh-plugin-corpus 内置 OCR（Windows 自带能力，无外部安装）：
 #   image -> Windows.Media.Ocr 直接识别图片
 #   pdf   -> Windows.Data.Pdf 逐页渲染，再用 Windows.Media.Ocr 识别
+#   -Pages "1-3,7" -> 只识别指定页（1-based），用于“只对缺文字层的页做 OCR”
 # 输出纯文本到 stdout；失败写 stderr 并以非 0 退出。
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -64,7 +66,31 @@ if ($Mode -eq 'image') {
 }
 
 $document = Await ([Windows.Data.Pdf.PdfDocument]::LoadFromFileAsync($storageFile)) ([Windows.Data.Pdf.PdfDocument])
+
+# 解析 -Pages（1-based，支持 "1,3-5,9"）。留空 = 全部页。
+$selected = $null
+if ($Pages -ne '') {
+  $selected = New-Object 'System.Collections.Generic.HashSet[int]'
+  foreach ($part in $Pages.Split(',')) {
+    $token = $part.Trim()
+    if ($token -eq '') { continue }
+    if ($token -match '^(\d+)-(\d+)$') {
+      $first = [int]$Matches[1]
+      $last = [int]$Matches[2]
+      if ($first -gt $last) { $swap = $first; $first = $last; $last = $swap }
+      for ($pageNo = $first; $pageNo -le $last; $pageNo++) { [void]$selected.Add($pageNo) }
+    } elseif ($token -match '^\d+$') {
+      [void]$selected.Add([int]$token)
+    } else {
+      throw ("invalid -Pages token: {0}" -f $token)
+    }
+  }
+  if ($selected.Count -eq 0) { throw 'no valid pages in -Pages' }
+}
+
 for ($index = 0; $index -lt $document.PageCount; $index++) {
+  $pageNumber = $index + 1
+  if ($selected -ne $null -and -not $selected.Contains($pageNumber)) { continue }
   $page = $null
   try {
     $page = $document.GetPage([uint32]$index)
@@ -75,12 +101,12 @@ for ($index = 0; $index -lt $document.PageCount; $index++) {
     $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
     $text = Ocr-Bitmap $bitmap $engine
     Write-Output ''
-    Write-Output ("--- Page {0} ---" -f ($index + 1))
+    Write-Output ("--- Page {0} ---" -f $pageNumber)
     Write-Output $text
   } catch {
     # 单页损坏/渲染失败不应让整本 PDF 全部失败；标记该页并继续。
     Write-Output ''
-    Write-Output ("--- Page {0} (OCR failed: {1}) ---" -f ($index + 1), $_.Exception.Message)
+    Write-Output ("--- Page {0} (OCR failed: {1}) ---" -f $pageNumber, $_.Exception.Message)
   } finally {
     if ($page -ne $null) { $page.Dispose() }
   }

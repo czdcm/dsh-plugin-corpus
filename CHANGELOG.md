@@ -2,20 +2,26 @@
 
 本文件记录 `dsh-plugin-corpus` 的对外版本变化。
 
-## 1.4.3 — 2026-10-30
+## 1.5.0 — 2026-10-30
 
-### 扫描版大 PDF 导入卡死修复
+### PDF 逐页提取（文字层 + OCR 混合，保证内容完整）
+
+- 文字层按 `pdftotext` 的分页符拆页，逐页判断：**有可读文字层的页原样保留，只对没有文字层/乱码的页做 Windows OCR**，最后按页序合并。
+- OCR 脚本新增 `-Pages "1-3,7"` 页码范围：一次加载 PDF、只渲染缺文字的页；超时按缺页数放宽（15–30 分钟），仍是异步子进程，不占宿主事件循环。
+- 修复 pdftotext 分页尾部空段被误删的问题：末尾的扫描页现在也会被 OCR 补齐，不会静默丢页。
+- `.meta.json` 新增 `pdfPages`：`{ total, text, ocr, weak, empty, ocrRuns }`；`extractor` 新增 `pdf-mixed`。
+- 实测：
+  - 纯文字 PDF（214 页）≈ 6.6 秒（204 页文字层 + 10 页图页 OCR）；
+  - 混合 PDF（2 页文字 + 2 页扫描）≈ 1.5 秒，只 OCR 缺的 2 页；
+  - 纯扫描书（386 页 / 24.4 MB）≈ 90 秒，386 页全部 OCR。
+
+### 移除纯 JS PDF 解析兜底
 
 - **根因**：PDF 文字层不可用时，纯 JS 兜底 `extractPdfText` 会把 PDF 里每个 `DCTDecode`/`JPXDecode` 图片流也当文本解码。一本 386 页、24.4 MB 的扫描书实测占满宿主主线程 **13 分钟仍未结束**（手动复现时该 node 进程累计 CPU 812 秒），期间 DSH 的「载入历史」、消息发送、面板请求全部卡住——用户看到的就是“导入不了 + 界面假死”。
-- 修复：`plugin/lib/pdf.js`
-  - 跳过 `/DCTDecode`、`/JPXDecode`、`/CCITTFaxDecode`、`/JBIG2Decode` 图片流；
-  - 跳过压缩前 >16 MB、解压后 >8 MB 的异常内容流；
-  - `extractPdfText(buffer, { maxMs })` 增加时间预算（默认 3 秒），超时返回已抽到的部分。
-- 修复：`plugin/lib/extract.js`
-  - 纯 JS 解析固定 3 秒预算；
-  - 超过 12 MB 且系统有 Windows OCR 时，直接跳过纯 JS 解析进入 OCR（异步子进程，不堵宿主事件循环）。
-- 实测：同一本书 OCR 用时约 91 秒，得到 558,969 字符；中文逐字空格按原流程合并。
-- 新增 `tests/test-extract.mjs` 用例：图片流必须被跳过、纯 JS 解析受时间预算约束。
+- 移除 `plugin/lib/pdf.js` 中的纯 JS 文字层解析（`extractPdfText`/`streamChunks`/`textFromContent`）。
+- PDF 提取现在明确依赖随包 `vendor/pdftotext`（官方完整包均包含）；缺失时给出明确错误，不再尝试纯 JS 解析。
+- `tools/package-plugin.ps1` 移除 `-WithoutPdftotext` 开关，只产出完整包。
+- 新增 `tests/test-extract.mjs` 用例：逐页拆页/缺页判断/页码压缩/OCR 输出解析/合并，以及“文字层 PDF 不再走纯 JS”。
 
 ## 1.4.2 — 2026-10-30
 

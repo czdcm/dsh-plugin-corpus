@@ -30,7 +30,7 @@ foreach ($item in @('lib', 'vendor', 'cordis.patch.yml', 'package.json', 'README
 $hasOfficecli = Test-Path (Join-Path $PluginSource 'vendor\officecli\officecli.exe')
 $hasPdftotext = Test-Path (Join-Path $PluginSource 'vendor\pdftotext\pdftotext.exe')
 if (-not $hasOfficecli -or -not $hasPdftotext) {
-  Write-Warning 'plugin/vendor 缺少第三方二进制（OfficeCLI / pdftotext），部署后 Office/PDF 提取会降级为纯 JS/OCR。'
+  Write-Warning 'plugin/vendor 缺少第三方二进制（OfficeCLI / pdftotext）：Office 会回退纯 JS，PDF 文字层不可提取（只能整本 OCR；非 Windows 将无法导入 PDF）。'
   Write-Warning 'GitHub 源码仓库不含这些二进制；完整安装请使用 Release 里的完整 zip，或先把 vendor 文件放回本机。'
 }
 

@@ -4,7 +4,7 @@
 
 它把参考文档保存在一个可整体搬迁的语料根目录里，用 SQLite 建立索引，向模型提供检索/读取工具，支持常见文档和图片导入，并提供 Web 面板用于导入、浏览、权限管理、根目录迁移和软删除。
 
-当前版本：**1.4.3**。这是一个 DSH 插件，不是独立应用：安装到 DSH 插件目录并完全重启 DSH 后生效。
+当前版本：**1.5.0**。这是一个 DSH 插件，不是独立应用：安装到 DSH 插件目录并完全重启 DSH 后生效。
 
 ## 功能
 
@@ -15,15 +15,17 @@
 - **公式保留**：HTML MathML、Word/PowerPoint 内嵌 OMML、常见 Unicode 数学符号和已有 LaTeX 统一规范成 `$...$` / `$$...$$`；PDF 的公式行也会保留并尽可能转成 LaTeX 公式块。
 - **文档导入**：Markdown、纯文本、HTML、CSV、PDF、DOCX、XLSX、PPTX 和常见图片；每次导入只写 `processed/`（供模型读）；源文件由用户自行管理。
 - **Office 高保真导入**：DOCX/XLSX/PPTX 走 officecli；PPT 额外读取对象树、分组、连接线、图表并渲染版式缩略图，Office 专用提示词要求按页解释图形逻辑，不再用「图示略」跳过；公式覆盖 OMML、Excel 公式、HTML MathML、PDF 公式行与 OCR 文本。
-- **扫描版 PDF**：Windows OCR 逐页容错，单页失败不中止整本；本机路径单文件上限 256 MiB。超大扫描件跳过纯 JS 文字层解析、直接走 OCR（386 页 / 24 MB 实测约 90 秒），不会占满宿主主线程。
-- **PDF 质量闸门**：pdftotext/纯 JS 输出会检查空格、符号、控制字符和 PDF/JPEG 二进制标记；压缩流乱码不会写入语料，文字层不可用时自动转 OCR，OCR 仍不可读则明确失败。
+- **扫描版 PDF**：Windows OCR 逐页容错，单页失败不中止整本；本机路径单文件上限 256 MiB。OCR 是异步子进程，386 页 / 24 MB 实测约 90 秒，不占宿主主线程。
+- **PDF 逐页提取**：文字层按页拆分，**只有缺文字层/乱码的页才做 OCR**，其余页保留文字层，最后按页序合并（混合型 PDF 不再整本二选一）。`.meta.json` 里记录 `pdfPages`（总页数 / 文字层页数 / OCR 页数）。
+- **PDF 质量闸门**：pdftotext 输出会检查空格、符号、控制字符和 PDF/JPEG 二进制标记；压缩流乱码不会写入语料，缺文字层的页自动转 OCR，OCR 仍不可读则明确失败。
+- **PDF 依赖随包 pdftotext**：官方完整包都包含 `vendor/pdftotext`；缺失时文字层不可提取，只能整本走 Windows OCR（非 Windows 则明确报错），不再有纯 JS 兜底。
 - **文件名跟随源文件**：processed Markdown 默认使用源文件名词干（保留中文/空格），便于按源文件管理。
 - **集合名**：支持中文、字母、数字、空格和常用符号（≤64 字符）；不能含 `/ \ : * ? " < > |`，也不能以点或空格结尾。
 - **内置小代理**：固定提示词、单轮后台调用，不污染主会话；明确要求公式输出 LaTeX。
 - **主会话接口**：把克隆的仓库或当前会话总结成语料。
 - **Web 面板**：左侧栏语料库页面（导入、检索、文件列表、集合折叠、删除、根目录设置）；检索只负责定位，查看直接用外部软件；文件列表每行提供外部打开按钮。
 - **外部查看**：每行「用外部软件打开」主按钮优先读取 Windows 默认关联（含最近选择）直接打开；没有关联时打开系统软件选择器，由 Windows 记录本次选择；点 `▾` 可再次打开系统软件选择器。文件列表的图标/名称/类型跟随处理后语料类型；按钮只显示默认应用图标，不显示文字；右侧箭头保留系统选择器。
-- **Windows 辅助能力**：内置 OCR；完整包随附 OfficeCLI/pdftotext，缺失时自动降级。
+- **Windows 辅助能力**：内置 OCR；完整包随附 OfficeCLI/pdftotext；Office 在没有 officecli 时回退纯 JS，PDF 文字层依赖随包 pdftotext。
 - **资源护栏**：导入逐文件异步执行并定期让出事件循环（大目录导入不再整段卡住 DSH）；工具输出有硬上限（默认 24000 字符，可配置 `maxToolOutputChars`）；提示词目录与面板轮询带短 TTL 缓存。
 
 ## 环境要求
@@ -73,7 +75,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 # 完全重启 DSH
 ```
 
-`tools\deploy.ps1` 会把 `plugin/` 复制到 `%USERPROFILE%\.dsh\plugins\dsh-plugin-corpus`。如果 vendor 二进制缺失，脚本会给出警告并安装纯 JS/Windows OCR 降级版本。
+`tools\deploy.ps1` 会把 `plugin/` 复制到 `%USERPROFILE%\.dsh\plugins\dsh-plugin-corpus`。如果 vendor 二进制缺失，脚本会给出警告：Office 只能回退纯 JS，PDF 文字层不可提取（只能整本 OCR）。
 
 ## 快速开始
 
@@ -182,8 +184,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 # 打完整插件包（默认写入项目 releases/v<版本>/）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1
 
-# 可选：本地构建不含 GPL pdftotext 的包（官方 Release 只发布完整包）
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1 -WithoutPdftotext
+# 打完整插件包（唯一的发布形态：包含 OfficeCLI 与 pdftotext）
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1
 ```
 
 测试优先使用 `DSH_NODE`；未设置时自动查找 DSH 自带 Node 或 PATH 中的 `node`。真实语料回归测试默认跳过，设置 `CORPUS_TEST_ROOT`、`CORPUS_TEST_IT`、`CORPUS_TEST_DSH` 后运行；公式 PDF 回归可设置 `CORPUS_TEST_FORMULA_PDF`。
@@ -214,4 +216,4 @@ LICENSE
 
 本项目源码采用 **GPL-2.0-or-later**。
 
-OfficeCLI 为 Apache-2.0；Poppler/pdftotext 为 GPL-2.0-or-later。官方 Release 只发布包含两者的完整包，并附许可证和源码说明；源码中仍可用 `-WithoutPdftotext` 做本地可选构建。详见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+OfficeCLI 为 Apache-2.0；Poppler/pdftotext 为 GPL-2.0-or-later。官方 Release 只发布包含两者的完整包，并附许可证和源码说明；`package-plugin.ps1` 也只产出完整包。详见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。

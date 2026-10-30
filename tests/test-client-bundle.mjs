@@ -440,7 +440,7 @@ function staticChecks() {
   ok('AI 结构化开关与提示', SOURCE.indexOf('aiAvailable') !== -1
     && SOURCE.indexOf('使用默认模型，耗时随文档长度增加') !== -1)
   ok('提取器不可用提示（PDF/OCR/视觉）',
-    SOURCE.indexOf('CORPUS_PDFTOTEXT') !== -1
+    SOURCE.indexOf('pdftotext') !== -1
     && SOURCE.indexOf('importOcrHint') !== -1 && SOURCE.indexOf('importVisionHint') !== -1)
   ok('展示扫描版 PDF/OCR 边界提示', SOURCE.indexOf('OCR') !== -1 && SOURCE.indexOf('importPdfOcrHint') !== -1)
   ok('展示 item warnings/result.errors', SOURCE.indexOf('importItemWarning') !== -1 && SOURCE.indexOf('resultData.errors') !== -1)
@@ -1036,7 +1036,7 @@ function importRenderChecks() {
     ok('支持格式展示', text.indexOf('支持格式') !== -1 && text.indexOf('.pdf') !== -1 && text.indexOf('.csv') !== -1)
     ok('提取器可用性展示', text.indexOf('文档提取器') !== -1 && text.indexOf('PDF') !== -1
       && text.indexOf('Office') !== -1 && text.indexOf('OCR') !== -1 && text.indexOf('Vision') !== -1)
-    ok('提取器不可用提示', text.indexOf('不可用') !== -1 && text.indexOf('CORPUS_PDFTOTEXT') !== -1)
+    ok('提取器不可用提示', text.indexOf('不可用') !== -1 && text.indexOf('pdftotext') !== -1)
     ok('上传上限提示', text.indexOf('25.0 MB') !== -1 && text.indexOf('200') !== -1)
     ok('开始导入按钮', findButton(element, '开始导入') !== undefined)
     const fileInput = findNode(element, (node) => node.type === 'input' && node.props && node.props.type === 'file')
@@ -1070,7 +1070,7 @@ function importRenderChecks() {
     const { page } = bootImportPage('zh-CN', importBeans({ [IMPORT_HOOK_OFFSET]: { loading: false, error: null, data: targets } }))
     const text = textOf(expandTree(page())).join(' ')
     ok('pdf 可用时提示扫描版 OCR 边界', text.indexOf('OCR') !== -1 && text.indexOf('扫描版') !== -1)
-    ok('提取器全部可用时不显示安装提示', text.indexOf('CORPUS_PDFTOTEXT') === -1)
+    ok('提取器全部可用时不显示安装提示', text.indexOf('没有随包 pdftotext') === -1)
   }
 
   // 4) AI 不可用 → 禁用开关并说明

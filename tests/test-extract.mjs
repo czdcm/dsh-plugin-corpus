@@ -12,7 +12,8 @@
  *   · extract.js   —— 文本/CSV/HTML（标题、实体解码、script/style/noscript/注释剔除）、
  *                     图片返回 kind:'image' + mediaType、maxBytes/不存在/目录/扩展名拒绝、
  *                     空文本 warning、extractorAvailability 与 SUPPORTED_EXTENSIONS；
- *   · pdf.js       —— 纯 JS 文字层提取；随包 vendor/pdftotext 可用时再验一条（没有则 SKIP 注明）。
+ *   · pdf.js       —— 质量闸门 / OCR 空格合并；随包 vendor/pdftotext 可用时验证文字层提取
+ *                     （v1.4.3 起 PDF 不再有纯 JS 解析兜底）。
  *
  * 运行（DSH 自带 Node 24）：
  *   & "…\dependencies\node\bin\node.exe" tests\test-extract.mjs
@@ -24,7 +25,7 @@ import path from 'node:path'
 import zlib from 'node:zlib'
 import { SUPPORTED_EXTENSIONS, bundledOfficecli, extractDocument, extractorAvailability, htmlToText } from '../plugin/lib/extract.js'
 import { extractOffice, extractXlsxFormulas } from '../plugin/lib/office.js'
-import { extractPdfText, isUsablePdfText, normalizeOcrText, ocrAvailable, pdfExtractorAvailability, pdfTextQuality } from '../plugin/lib/pdf.js'
+import { compressPageRanges, isUsablePdfText, mergePdfPageTexts, needsOcrPage, normalizeOcrText, ocrAvailable, parseOcrPages, pdfExtractorAvailability, pdfTextQuality, splitPdfPages } from '../plugin/lib/pdf.js'
 import { readZip } from '../plugin/lib/zip.js'
 
 let pass = 0
@@ -322,48 +323,41 @@ try {
   ok('图片：png/jpg/jpeg/webp/gif/bmp/tif/tiff 返回 kind:image 与 mediaType（不要求 OCR）')
 
   // -------------------------------------------------------------------------
-  // 5. PDF：纯 JS 兜底 + 随包 pdftotext（可选）
+  // 5. PDF：随包 pdftotext + OCR（v1.4.3 起不再有纯 JS 兜底）
   // -------------------------------------------------------------------------
   const pdfFile = write('text-layer.pdf', buildTextPdf())
-  const pdfBuffer = fs.readFileSync(pdfFile)
-  const jsText = extractPdfText(pdfBuffer)
-  assert(jsText.includes('Corpus PDF Test'), '纯 JS 应抽出文字层第一行，实际：' + JSON.stringify(jsText))
-  assert(jsText.includes('Second line of PDF text.'), '纯 JS 应抽出文字层第二行')
-  assert(isUsablePdfText(jsText), '正常 PDF 文字层应通过质量检查')
   assert(!isUsablePdfText('\f\f\f\f\f\f\f\f\f\f'), '只有换页符的 PDF 输出应判为不可读')
   assert(!isUsablePdfText('Y}r`47y6wRUCKnsG$OMUoMYs}f`eN _M]u,$Y[^v.nkv#?5{q=Vn,>5FM[ C#;EV{wK#>dSWc+s{7MEX5k!$.V/NMKE8_dZ0wN6A=S}8ah<m;}a"m^Xv,}$?XTkSAlo%:f?z{-~nQ~IO4I%'), '压缩流乱码应判为不可读')
   assert(pdfTextQuality('短文本').ok === false && pdfTextQuality('短文本').reason === 'too-short', '短文本质量结果应标记 too-short')
   assert(normalizeOcrText('机 械 设 计 基 础 （ 第 五 版 ）') === '机械设计基础（第五版）', 'OCR 中文逐字空格应合并')
   ok('PDF 文字质量闸门：正常文本 / 空换页 / 二进制乱码 / OCR 中文空格')
 
-  // v1.4.3：扫描版大 PDF 的纯 JS 兜底必须“便宜”——跳过图片流 + 时间预算，
-  // 否则 24 MB 的扫描书会把宿主主线程占满十几分钟（导入卡死、历史加载不出来的根因）。
+  // v1.5.0：逐页兜底——拆页 / 缺页判断 / 页码压缩 / OCR 输出解析 / 合并
   {
-    const imageHeavy = Buffer.concat([
-      Buffer.from('%PDF-1.4\n', 'latin1'),
-      Buffer.from('5 0 obj\n<< /Length 900000 /Filter /DCTDecode >>\nstream\n', 'latin1'),
-      Buffer.from('(FAKE IMAGE TEXT) Tj\n'.repeat(50000), 'latin1'),
-      Buffer.from('\nendstream\nendobj\n', 'latin1'),
-      Buffer.from('6 0 obj\n<< /Length 60 >>\nstream\nBT\n(Real text line) Tj\nET\n', 'latin1'),
-      Buffer.from('endstream\nendobj\n', 'latin1'),
-    ])
-    const started = Date.now()
-    const got = extractPdfText(imageHeavy, { maxMs: 2000 })
-    const elapsed = Date.now() - started
-    assert(!got.includes('FAKE IMAGE TEXT'), 'DCTDecode 图片流不应被当作文本解析')
-    assert(got.includes('Real text line'), '普通文字流仍应被抽出，实际：' + JSON.stringify(got.slice(0, 80)))
-    assert(elapsed < 1000, '图片流应被跳过，实际耗时 ' + elapsed + 'ms')
+    const pages = splitPdfPages('第一页文字够长够长够长够长够长够长够长够长够长够长\f\f第三页\n')
+    assert(pages.length === 3 && pages[1].trim() === '', 'splitPdfPages 应保留中间空页并去掉末尾空页，实际 ' + JSON.stringify(pages))
+    const trailingBlank = splitPdfPages('a\fb\f\f\f')
+    assert(trailingBlank.length === 4 && trailingBlank[2] === '' && trailingBlank[3] === '', 'splitPdfPages 应保留末尾真正的空白页（只去掉分页符产生的空段），实际 ' + JSON.stringify(trailingBlank))
 
-    const manyStreams = Buffer.concat([
-      Buffer.from('%PDF-1.4\n', 'latin1'),
-      Buffer.from(Array.from({ length: 3000 }, (_, index) => `${index + 1} 0 obj\n<< /Length 40 >>\nstream\nBT\n(Line ${index}) Tj\nET\nendstream\nendobj\n`).join(''), 'latin1'),
-    ])
-    const budgetStart = Date.now()
-    extractPdfText(manyStreams, { maxMs: 50 })
-    const budgetMs = Date.now() - budgetStart
-    assert(budgetMs < 2000, '纯 JS 解析应受时间预算约束，实际 ' + budgetMs + 'ms')
-    ok('大 PDF 兜底护栏：跳过 DCT/JPX 图片流 + 时间预算（图片流 ' + elapsed + 'ms，预算 ' + budgetMs + 'ms）')
+    assert(needsOcrPage('') === true, '空页需要 OCR')
+    assert(needsOcrPage('短封面') === false, '短但干净的页保留文字层')
+    assert(needsOcrPage('Y}r`47y6wRUCKnsG$OMUoMYs}f`eN _M]u,$Y[^v.nkv#?5{q=Vn,>5FM[ C#;EV{wK#>dSWc+s{7MEX5k!$.V/NMKE8_dZ0wN6A=S}8ah<m;}a"m^Xv,}$?XTkSAlo%:f?z{-~nQ~IO4I%') === true, '乱码页需要 OCR')
+
+    assert(compressPageRanges([1, 2, 3, 5, 9, 10]) === '1-3,5,9-10', 'compressPageRanges 结果错误：' + compressPageRanges([1, 2, 3, 5, 9, 10]))
+    assert(compressPageRanges([]) === '', '空页码数组应得到空字符串')
+
+    const parsed = parseOcrPages('--- Page 1 ---\n甲\n--- Page 3 (OCR failed: boom) ---\n--- Page 4 ---\n丁')
+    assert(parsed.pages.get(1) === '甲' && parsed.pages.get(4) === '丁', 'parseOcrPages 应解析成功页')
+    assert(parsed.failures.get(3) === 'boom', 'parseOcrPages 应解析失败页')
+
+    const textPages = ['第一页够长的文字内容'.repeat(6), '', 'endstream FlateDecode ' + 'x'.repeat(60)]
+    const ocrPages = new Map([[2, '第二页 OCR 文本'], [3, '第三页 OCR 文本']])
+    const merged = mergePdfPageTexts(textPages, ocrPages, 3)
+    assert(merged.textPages === 1 && merged.ocrPages === 2, '合并统计错误：text=' + merged.textPages + ' ocr=' + merged.ocrPages)
+    assert(merged.pages[0].includes('第一页') && merged.pages[1] === '第二页 OCR 文本' && merged.pages[2] === '第三页 OCR 文本', '合并结果页序/来源错误')
+    ok('逐页兜底：拆页 / 缺页判断 / 页码压缩 / OCR 输出解析 / 合并')
   }
+
   const pdfDoc = await extractDocument(pdfFile)
   assert(pdfDoc.kind === 'text' && pdfDoc.format === 'pdf', 'PDF → kind:text / format:pdf')
   assert(pdfDoc.text.includes('Corpus PDF Test') && pdfDoc.text.includes('Second line of PDF text.'), 'extractDocument PDF 文本，extractor=' + pdfDoc.meta.extractor)
@@ -371,10 +365,9 @@ try {
   const pdfAvail = pdfExtractorAvailability()
   if (pdfAvail.bundled) {
     assert(pdfDoc.meta.extractor === 'bundled-pdftotext', '有随包 pdftotext 时应优先用它，实际 ' + pdfDoc.meta.extractor)
-    ok('PDF：随包 vendor/pdftotext 直接提取文字层（纯 JS 兜底也已单独验证）')
+    ok('PDF：随包 vendor/pdftotext 直接提取文字层（不再有纯 JS 兜底）')
   } else {
-    assert(pdfDoc.meta.extractor === 'pdf-js', '没有 vendor 时应走纯 JS 提取，实际 ' + pdfDoc.meta.extractor)
-    skipTest('PDF：随包 pdftotext', 'vendor/pdftotext 不存在（非 Windows x64 部署），已用纯 JS 兜底验证')
+    skipTest('PDF：随包 pdftotext', '缺少 vendor/pdftotext；v1.4.3 起 PDF 提取依赖随包 pdftotext（官方完整包包含）')
   }
 
   // 可选 OCR 冒烟：默认跳过（PowerShell + Windows OCR 要几秒，且识别结果依赖引擎）
@@ -396,7 +389,7 @@ try {
   // -------------------------------------------------------------------------
   const availability = extractorAvailability()
   assert(Object.keys(availability).sort().join(',') === 'bundle,html,image,ocr,office,officecli,pdf', 'extractorAvailability 字段应为 {pdf,office,officecli,html,bundle,ocr,image}，实际 ' + Object.keys(availability).join(','))
-  assert(availability.pdf === true && availability.office === true && availability.html === true && availability.image === true, '纯 JS 提取器（pdf/office/html/image）应始终可用')
+  assert(availability.pdf === availability.bundle && availability.office === true && availability.html === true && availability.image === true, 'PDF 依赖随包 pdftotext；office/html/image 应始终可用')
   assert(typeof availability.bundle === 'boolean' && typeof availability.ocr === 'boolean' && typeof availability.officecli === 'boolean', 'bundle/ocr/officecli 应是布尔值')
   assert(availability.officecli === (bundledOfficecli() !== null), 'officecli 可用性应与 bundledOfficecli() 一致')
   ok('extractorAvailability：{pdf,office,officecli,html,bundle,ocr,image} 形状 + bundledOfficecli() 一致')

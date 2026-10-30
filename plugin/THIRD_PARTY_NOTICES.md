@@ -46,7 +46,7 @@
 | 默认 `*-plugin.zip` | 插件代码 + 完整 vendor + 许可证/说明 | OfficeCLI（Apache-2.0）+ pdftotext（GPL-2.0-or-later） |
 | `*-handoff.zip`（如果本地生成） | 完整开发交接包 | 本地 vendor；公开再分发前必须满足 GPL 义务 |
 
-官方 Release 只发布完整包。`tools/package-plugin.ps1 -WithoutPdftotext` 仅保留为本地可选构建，不作为官方 Release 资产上传。
+官方 Release 只发布完整包；`tools/package-plugin.ps1` 也只产出完整包（v1.5.0 起移除了纯 JS PDF 解析兜底，PDF 文字层依赖随包 pdftotext）。
 
 如果发布包含 `pdftotext` 的构建，请保留许可证、NOTICE、源码获取说明；默认构建已经随包附带。Poppler 源码可从上游获取，`SOURCE-OFFER.txt` 中也有说明。
 

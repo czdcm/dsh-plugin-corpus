@@ -9,7 +9,7 @@ dsh-plugin-corpus 是 **DeepSeek Harness (DSH)** 的文件语料库插件。
 - **模型只读 `processed/`**：插件不再保存源文件；
 - **一切访问先过 ACL**：按工作区/会话/路径授权，默认拒绝。
 
-当前版本：**1.4.3**。
+当前版本：**1.5.0**。
 
 ---
 
@@ -136,15 +136,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 | `.md` `.markdown` `.txt` `.text` | 直接读取文本 |
 | `.html` `.htm` | 去标签，保留标题/段落/列表 |
 | `.csv` | 文本化表格 |
-| `.pdf` | 优先随包 `pdftotext`；无文字层时用纯 JS 解析；扫描版走 Windows OCR |
+| `.pdf` | 随包 `pdftotext` 抽文字层；缺文字层/乱码的页逐页用 Windows OCR，最后按页序合并 |
 | `.docx` `.xlsx` `.pptx` | 优先 OfficeCLI；失败/缺失时回退纯 JS ZIP+XML 解析 |
 | `.png` `.jpg` `.jpeg` `.webp` `.gif` `.bmp` `.tif` `.tiff` | 有可用视觉模型时结构化；否则使用 Windows OCR/占位 Markdown |
 
-PDF 文本在进入 AI 前会做质量闸门：空格比例过低、符号/控制字符异常或夹带 PDF/JPEG 二进制标记的输出会被丢弃，再走 OCR；OCR 仍不可读时导入失败，不会把乱码写进 `processed/`。
+PDF 文本在进入 AI 前会做质量闸门：空格比例过低、符号/控制字符异常或夹带 PDF/JPEG 二进制标记的输出会被丢弃。逐页判断：可读的页保留文字层，缺文字层/乱码的页单独 OCR，合并后仍不可读时导入失败，不会把乱码写进 `processed/`。`.meta.json` 的 `pdfPages` 记录总页数、文字层页数、OCR 页数与不可读页数。
 
 面板里的 **Vision** 不可用时会显示具体原因，通常是当前默认模型不支持图片输入。可以在 DSH profile 的插件配置中设置 `ingestVisionProvider` / `ingestVisionModel` 指向可接收图片的模型；未配置视觉模型时图片退回内置 Windows OCR。
 
-完整包随附 PDF/Office 工具；缺失时插件仍能用纯 JS/系统能力降级运行。
+完整包随附 PDF/Office 工具。没有 `officecli` 时 Office 回退纯 JS；没有 `pdftotext` 时 PDF 文字层不可提取，只能整本走 Windows OCR（非 Windows 则无法导入 PDF）。官方 Release 只发布完整包。
 OfficeCLI 是 Apache-2.0；Poppler `pdftotext` 是 GPL-2.0-or-later，详见仓库根目录的
 `THIRD_PARTY_NOTICES.md`。
 
@@ -211,7 +211,7 @@ OfficeCLI 是 Apache-2.0；Poppler `pdftotext` 是 GPL-2.0-or-later，详见仓�
 | `maxToolOutputChars` | `24000` | 工具返回值的硬上限；超限时逐级压缩长字符串/长数组并标记 `_truncated`，避免把超大文本写进会话历史 |
 | `perfLogMs` | `250` | 单次 `corpus_import` 超过该毫秒数时写 warn 日志，便于定位慢导入 |
 
-> **性能说明（v1.4.3）**：插件跑在 DSH 宿主进程里，任何同步长任务都会连带卡住 GUI。
+> **性能说明（v1.5.0）**：插件跑在 DSH 宿主进程里，任何同步长任务都会连带卡住 GUI。
 > 现在导入按文件异步执行、每 32 个文件或 8ms 让出一次事件循环；单次导入只预热前 40 份目录，
 > 其余按需生成。提示词目录缓存 60 秒、面板轮询缓存 1.5 秒，导入/重建/删除后主动失效。
 
@@ -266,7 +266,7 @@ Invoke-RestMethod 'http://127.0.0.1:<port>/api/dsh-plugin-corpus/gallery?limit=1
 - `corpus_read` 只读 `processed/`；
 - 删除是软删除，内容移到 `.corpus/trash/`；
 - 浏览器上传单文件默认 25 MiB；本机路径单文件默认 256 MiB；格式白名单见 `/import/targets`；
-- 扫描版 PDF 的 OCR 依赖 Windows OCR，速度比文字层提取慢；
+- 扫描版 PDF 的 OCR 依赖 Windows OCR，速度比文字层提取慢（约 0.25 秒/页）；混合型 PDF 只 OCR 缺文字层的页；
 - 访问策略文件、本机 ACL 配置不要提交到 Git。
 
 ---
@@ -280,11 +280,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\test-all.ps1
 # 部署到 ~/.dsh/plugins/dsh-plugin-corpus
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 
-# 打完整插件包
+# 打完整插件包（唯一的发布形态：包含 OfficeCLI 与 pdftotext）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1
-
-# 可选：本地构建不含 GPL pdftotext 的包（官方 Release 只发布完整包）
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1 -WithoutPdftotext
 ```
 
 测试使用 Node 自带模块和手写断言；`tools/test-all.ps1` 优先使用 `DSH_NODE`，

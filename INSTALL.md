@@ -1,6 +1,6 @@
 # 安装指南
 
-本文说明如何在 Windows 上安装 `dsh-plugin-corpus-v1.4.3-plugin.zip`。
+本文说明如何在 Windows 上安装 `dsh-plugin-corpus-v1.5.0-plugin.zip`。
 
 本插件是 **DeepSeek Harness（DSH）插件**，不是独立应用：必须放入 DSH 插件目录，并在当前 DSH profile 中注册。
 
@@ -31,7 +31,7 @@ vendor 二进制已经包含在完整包里，不需要单独安装 OfficeCLI �
 
 ### 源码 clone 不等于完整安装
 
-GitHub 源码仓库不包含第三方二进制（`officecli.exe` / `pdftotext.exe`）。`git clone` 适合看代码和跑测试，但默认没有完整 Office/PDF 提取能力。完整安装请使用 Release 包；源码开发前先把 vendor 文件放回 `plugin/vendor/officecli/` 和 `plugin/vendor/pdftotext/`，或接受纯 JS/Windows OCR 降级。
+GitHub 源码仓库不包含第三方二进制（`officecli.exe` / `pdftotext.exe`）。`git clone` 适合看代码和跑测试，但默认没有完整 Office/PDF 提取能力。完整安装请使用 Release 包；源码开发前先把 vendor 文件放回 `plugin/vendor/officecli/` 和 `plugin/vendor/pdftotext/`，否则 Office 只能回退纯 JS，PDF 文字层不可提取、只能整本走 Windows OCR（非 Windows 则无法导入 PDF）。
 
 ## 3. 从 npm / 插件市场安装
 
@@ -153,6 +153,6 @@ pnpm install
 
 | 包 | 内容 |
 |---|---|
-| `dsh-plugin-corpus-v1.4.3-plugin.zip` | 完整包：OfficeCLI + pdftotext + 许可证/源码说明 |
+| `dsh-plugin-corpus-v1.5.0-plugin.zip` | 完整包：OfficeCLI + pdftotext + 许可证/源码说明 |
 
-官方 Release 只发布完整包。源码中仍可用 `tools/package-plugin.ps1 -WithoutPdftotext` 做本地可选构建，但不再作为官方 Release 资产上传。
+官方 Release 只发布完整包；`tools/package-plugin.ps1` 也只产出完整包（包含 OfficeCLI 与 pdftotext）。

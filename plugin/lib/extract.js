@@ -1,10 +1,10 @@
 /**
- * dsh-plugin-corpus — 文档提取（v1.3，可随插件整体搬走）。
+ * dsh-plugin-corpus — 文档提取（v1.4.3，可随插件整体搬走）。
  *
- * 不依赖本机安装的 pdftotext / officecli / Python：
+ * 不依赖本机安装的 Python；Office / PDF 的高保真提取依赖随包二进制（官方完整包均包含）：
  *   · .md/.txt/.csv/.html  纯 JS；
- *   · .docx/.xlsx/.pptx    纯 JS（ZIP + XML，见 office.js）；
- *   · .pdf                 纯 JS 尝试抽文字层；不足时用插件自带的
+ *   · .docx/.xlsx/.pptx    officecli 优先，缺失/失败时回退纯 JS（ZIP + XML，见 office.js）；
+ *   · .pdf                 随包 pdftotext（vendor/pdftotext）；无文字层的扫描件用
  *                          ocr_windows.ps1（Windows 自带 PDF 渲染 + OCR）兜底；
  *   · .png/.jpg/.jpeg/.webp 交给内置小代理做图片理解（不可用时用同一 OCR 脚本）。
  */
@@ -13,7 +13,7 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { extractOffice, extractOfficeFormulas, extractXlsxFormulas } from './office.js'
-import { extractPdfText, isUsablePdfText, ocrAvailable, pdfExtractorAvailability, pdfTextQuality, runBundledPdftotext, runWindowsOcr } from './pdf.js'
+import { compressPageRanges, isUsablePdfText, mergePdfPageTexts, needsOcrPage, ocrAvailable, parseOcrPages, pdfExtractorAvailability, pdfTextQuality, runBundledPdftotext, runWindowsOcr, splitPdfPages } from './pdf.js'
 import { extractFormulaLines, latexifyFormulaLines, mathmlToLatex, normalizeLatex } from './formulas.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -30,10 +30,6 @@ const OFFICE_EXTS = new Set(['.docx', '.xlsx', '.pptx'])
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tif', '.tiff'])
 const MAX_TEXT_CHARS = 8 * 1024 * 1024
 const MAX_FILE_BYTES = 256 * 1024 * 1024
-/** 超过这个体积的 PDF 不再做纯 JS 文字层解析（扫描件里全是图片流，解析既慢又无意义）。 */
-const PDF_JS_PARSE_MAX_BYTES = 12 * 1024 * 1024
-/** 纯 JS 解析的硬时间预算，避免在大 PDF 上占满宿主主线程。 */
-const PDF_JS_PARSE_MAX_MS = 3000
 
 const IMAGE_MEDIA = {
   '.png': 'image/png',
@@ -427,70 +423,101 @@ export async function extractDocument(file, options = {}) {
       }
     }
   } else if (ext === '.pdf') {
-    const buffer = await fs.promises.readFile(file)
     const canOcr = ocrAvailable()
+    const pdfAvailable = pdfExtractorAvailability()
     text = ''
-    let rejectedText = ''
-    if (pdfExtractorAvailability().bundled) {
+    let textPages = []
+    let pageCount = 0
+    let ocrMap = new Map()
+    let ocrRuns = 0
+
+    // 第一层：文字层（整本 pdftotext），按 \f 拆页后逐页判断。
+    if (pdfAvailable.bundled) {
       try {
         const candidate = await runBundledPdftotext(file)
-        if (isUsablePdfText(candidate)) {
-          text = candidate
-          extractor = 'bundled-pdftotext'
-        } else {
-          rejectedText = candidate
-          warnings.push(`pdftotext 输出不可读，已忽略${candidate.trim() === '' ? '（空文本）' : '（疑似乱码）'}`)
+        textPages = splitPdfPages(candidate)
+        pageCount = textPages.length
+        const missing = []
+        for (let index = 0; index < textPages.length; index++) {
+          if (needsOcrPage(textPages[index])) missing.push(index + 1)
+        }
+        if (missing.length > 0 && canOcr) {
+          // 逐页兜底：只为缺文字层/乱码的页跑 OCR，文字页原样保留。
+          const pagesSpec = compressPageRanges(missing)
+          const timeoutMs = Math.min(30 * 60 * 1000, Math.max(15 * 60 * 1000, missing.length * 1500))
+          warnings.push(`PDF 有 ${missing.length}/${pageCount} 页没有可读文字层，仅对这些页使用 OCR`)
+          try {
+            const stdout = await runWindowsOcr(file, 'pdf', timeoutMs, { pages: pagesSpec })
+            const parsed = parseOcrPages(stdout)
+            ocrMap = parsed.pages
+            ocrRuns = 1
+            if (parsed.failures.size > 0) {
+              const first = [...parsed.failures.keys()].slice(0, 10).join(', ')
+              warnings.push(`有 ${parsed.failures.size} 页 OCR 失败（第 ${first}${parsed.failures.size > 10 ? '…' : ''} 页）`)
+            }
+          } catch (error) {
+            warnings.push(`PDF 逐页 OCR 失败：${error instanceof Error ? error.message : String(error)}`)
+          }
+        } else if (missing.length > 0) {
+          warnings.push(`PDF 有 ${missing.length}/${pageCount} 页没有可读文字层，且当前系统没有可用的 OCR`)
         }
       } catch (error) {
-        warnings.push(`随包 pdftotext 失败，改用纯 JS：${error instanceof Error ? error.message : String(error)}`)
+        warnings.push(`随包 pdftotext 失败：${error instanceof Error ? error.message : String(error)}`)
+      }
+    } else {
+      // 发布版均带 pdftotext；缺失时只能整本 OCR（或明确失败）。
+      warnings.push('插件内没有随包 pdftotext（官方完整包应包含）；PDF 文字层无法提取，改为整本 OCR')
+    }
+
+    // 第二层（整体）：没有文字层（pdftotext 缺失/失败）时整本 OCR。
+    if (pageCount === 0 && canOcr) {
+      try {
+        const stdout = await runWindowsOcr(file, 'pdf')
+        const parsed = parseOcrPages(stdout)
+        ocrMap = parsed.pages
+        ocrRuns = 1
+        pageCount = Math.max(0, ...[...parsed.pages.keys()], ...[...parsed.failures.keys()])
+        if (parsed.failures.size > 0) warnings.push(`有 ${parsed.failures.size} 页 OCR 失败`)
+      } catch (error) {
+        warnings.push(`PDF OCR 失败：${error instanceof Error ? error.message : String(error)}`)
       }
     }
-    if (!isUsablePdfText(text)) {
-      if (buffer.length > PDF_JS_PARSE_MAX_BYTES && canOcr) {
-        // 扫描版大 PDF：纯 JS 解析会把每个 JPEG 流都当文本扫一遍，实测 24 MB 的书
-        // 能占满主线程 10 分钟以上，直接交给 OCR 子进程（异步、不堵事件循环）。
-        warnings.push(`PDF 较大（${Math.round(buffer.length / 1024 / 1024)} MB），跳过纯 JS 文字层解析，直接尝试 OCR`)
-      } else {
-        const candidate = extractPdfText(buffer, { maxMs: PDF_JS_PARSE_MAX_MS })
-        if (isUsablePdfText(candidate)) {
-          text = candidate
-          extractor = 'pdf-js'
-        } else if (candidate.trim() !== '') {
-          rejectedText = candidate
-          warnings.push('纯 JS PDF 文字层不可读，已忽略')
-        }
-      }
+
+    const merged = mergePdfPageTexts(textPages, ocrMap, pageCount)
+    const mergedText = merged.pages.join('\n\n').trim()
+    if (mergedText !== '') text = mergedText
+    if (merged.ocrPages > 0) {
+      extractor = merged.textPages > 0 ? 'pdf-mixed' : 'windows-ocr'
+    } else if (merged.textPages > 0) {
+      extractor = 'bundled-pdftotext'
     }
     if (!isUsablePdfText(text)) {
-      if (canOcr) {
-        try {
-          const ocrText = await runWindowsOcr(file, 'pdf')
-          if (isUsablePdfText(ocrText)) {
-            text = ocrText
-            extractor = 'windows-ocr'
-            warnings.push('PDF 文字层不可用，已用插件内置的 Windows OCR 提取')
-          } else {
-            warnings.push('PDF OCR 结果仍不可读，已丢弃')
-          }
-        } catch (error) {
-          warnings.push(`PDF OCR 兜底失败：${error instanceof Error ? error.message : String(error)}`)
-        }
-      } else {
-        warnings.push('PDF 文字层不可用，且当前系统没有可用的 OCR；可能是扫描版 PDF')
-      }
-    }
-    if (!isUsablePdfText(text)) {
-      throw new Error('PDF 没有可读文字层，且 OCR 不可用或结果不可读；请检查 PDF 是否为扫描件/加密件')
+      const detail = pageCount > 0
+        ? `（共 ${pageCount} 页：文字层 ${merged.textPages} 页、OCR ${merged.ocrPages} 页、不可读 ${merged.weakPages + merged.emptyPages} 页）`
+        : ''
+      throw new Error(pdfAvailable.bundled
+        ? `PDF 没有可读文字层，且 OCR 不可用或结果不可读${detail}；请检查 PDF 是否为扫描件/加密件`
+        : `PDF 文字提取需要随包 pdftotext（官方完整包包含）${detail}；当前安装缺少 vendor/pdftotext，且没有可用的 OCR`)
     }
     const quality = pdfTextQuality(text)
-    meta = { ...meta, pdfQuality: quality }
-    if (rejectedText.trim() !== '') meta = { ...meta, rejectedPdfChars: rejectedText.length }
+    meta = {
+      ...meta,
+      pdfQuality: quality,
+      pdfPages: {
+        total: pageCount,
+        text: merged.textPages,
+        ocr: merged.ocrPages,
+        weak: merged.weakPages,
+        empty: merged.emptyPages,
+        ocrRuns,
+      },
+    }
     text = normalizeLatex(text)
     const pdfFormulas = extractFormulaLines(text)
     if (pdfFormulas.length > 0) meta = { ...meta, formulaLines: pdfFormulas }
     text = latexifyFormulaLines(text)
-    // 扫描版 OCR 的第一行常是页眉/标点，不应拿来当标题；优先用源文件名。
-    title = extractor === 'windows-ocr' ? fallbackTitle : titleFromText(text, fallbackTitle)
+    // 整本 OCR 的第一行常是页眉/标点，不用它当标题；有文字层时仍按正文首行取标题。
+    title = merged.textPages > 0 ? titleFromText(text, fallbackTitle) : fallbackTitle
   } else if (IMAGE_EXTS.has(ext)) {
     kind = 'image'
     mediaType = IMAGE_MEDIA[ext]
