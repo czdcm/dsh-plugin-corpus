@@ -269,12 +269,23 @@ try {
   assert(foundImported.ok === true && foundImported.hits.some((hit) => hit.path === 'alpha/imported.md'), '导入后可检索')
   ok('corpus_import 相对工作区导入 + 自动重建 + 可检索')
 
+  // 已存在的集合没有 grant：自动授权不越界（只对新集合生效），仍然拒绝。
+  fs.mkdirSync(path.join(root, 'beta'), { recursive: true })
   let denied = false
   try { await call('corpus_import', { path: 'docs/imported.md', collection: 'beta' }) } catch (error) {
     denied = String(error && error.message).includes('权限')
   }
   assert(denied, '未授权集合应拒绝导入')
   ok('corpus_import 拒绝未授权集合')
+
+  // v1.6：不存在的集合 → 自动补一条最小 grant 并返回 autoGranted。
+  const auto = await call('corpus_import', { path: 'docs/imported.md', collection: 'gamma' })
+  assert(auto.ok === true && auto.autoGranted === true && auto.autoGrant !== null, '新建集合应自动授权：' + JSON.stringify(auto))
+  assert(Array.isArray(auto.autoGrant.rule.paths) && auto.autoGrant.rule.paths[0] === 'gamma', '自动授权只针对 gamma')
+  const policyAfter = JSON.parse(fs.readFileSync(path.join(home, 'corpus-access.json'), 'utf8'))
+  assert(policyAfter.grants.some((rule) => Array.isArray(rule.paths) && rule.paths.includes('gamma')), 'ACL 应写入 gamma grant')
+  await waitIdle()
+  ok('corpus_import 新建集合自动授权（仅该集合，可审计）')
 
   const reindex = await call('corpus_reindex', { collection: 'alpha', force: true })
   assert(reindex.ok === true && reindex.started === true && typeof reindex.jobId === 'string', 'corpus_reindex 异步启动')

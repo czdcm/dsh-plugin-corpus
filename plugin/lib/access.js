@@ -103,6 +103,56 @@ export function loadAccess(dshHome) {
 }
 
 /**
+ * 读取策略文件并区分「不存在」与「损坏」。
+ * 自动授权必须能分辨这两者：损坏时宁可拒绝，也不能覆盖用户策略。
+ * @returns {{policy: object|null, error: string|null}}
+ */
+export function readPolicySafe(dshHome) {
+  const file = path.join(dshHome, ACCESS_FILE)
+  if (!fs.existsSync(file)) return { policy: null, error: null }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { policy: null, error: '策略文件顶层不是对象' }
+    }
+    return { policy: parsed, error: null }
+  } catch (error) {
+    return { policy: null, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/** 规则是否适用于某主体（供自动授权判定复用）。 */
+export function ruleAppliesTo(rule, subject) {
+  const target = {
+    workspace: normalize(subject && subject.workspace),
+    session: (subject && subject.session) || '',
+  }
+  return ruleApplies(rule, target)
+}
+
+/** 策略里是否有显式 deny 命中该相对路径（自动授权前的硬门槛）。 */
+export function policyDeniesTarget(policy, subject, relPath) {
+  if (!policy || !Array.isArray(policy.deny)) return false
+  for (const rule of policy.deny) {
+    if (!ruleAppliesTo(rule, subject)) continue
+    const patterns = Array.isArray(rule.paths) ? rule.paths : []
+    if (patterns.some((pattern) => matchesTarget(pattern, relPath))) return true
+  }
+  return false
+}
+
+/** 策略里是否已有非过期 grant 覆盖该相对路径。 */
+export function policyAllowsTarget(policy, subject, relPath) {
+  if (!policy || !Array.isArray(policy.grants)) return false
+  for (const rule of policy.grants) {
+    if (!ruleAppliesTo(rule, subject)) continue
+    const patterns = Array.isArray(rule.paths) ? rule.paths : []
+    if (patterns.some((pattern) => matchesTarget(pattern, relPath))) return true
+  }
+  return false
+}
+
+/**
  * 为一次调用建立判定器。
  * @param dshHome - DSH 主目录（策略文件所在处）。
  * @param subject - { workspace, session }。

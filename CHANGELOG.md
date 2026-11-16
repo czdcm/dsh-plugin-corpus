@@ -2,6 +2,46 @@
 
 本文件记录 `dsh-plugin-corpus` 的对外版本变化。
 
+## 1.6.0 — 2026-11-16
+
+来源：`Desktop\DSH\学习` 会话的《语料插件待改清单-2026-11-16》（导入「道路勘测设计」合集时暴露的问题）。
+
+### 新建集合自动授权（P1）
+
+- `corpus_ingest` / `corpus_import` / `corpus_structure` / `corpus_summarize_session` 遇到**尚不存在、且当前会话没有任何 grant** 的集合时，自动补一条最小授权：优先 `session`、其次 `workspace`，`paths` 只含该集合名，绝不写 `*`。
+- 返回体新增 `autoGranted` 与 `autoGrant`（规则原文、备份路径、审计文件）；审计追加到 `<root>/.corpus/audit/auto-grant.jsonl`。
+- 安全边界：`default` 保持 `deny`；集合已存在、命中显式 `deny`、策略文件损坏时一律不自动放行；策略写入仍走 `savePolicy()`（备份 + 临时文件 rename）。
+- 新增 `plugin/lib/autogrant.js`；`access.js` 增加 `readPolicySafe` / `ruleAppliesTo` / `policyDeniesTarget` / `policyAllowsTarget`。
+
+### 大 Office 文件自动瘦身（P2）
+
+- 源文件超过单文件上限（默认 256 MiB）时，对 DOCX/XLSX/PPTX 自动生成瘦身副本：不解压、按条目原样复制，只跳过 `ppt|word|xl/media/*.{mp4,mov,avi,wmv,mkv,webm,mp3,wav,m4a,aac,flac,ogg}`、`*/embeddings/oleObject*.bin`、`*/fonts/*.{fntdata,odttf}`。
+- 不修改 rels 与 `[Content_Types].xml`，原文件不动；`warnings` 写明忽略了多少个条目 / MB，`meta.slimmed` 记录。
+- `zip.js` 新增 `writeZip()` 与 `rewriteZip()`（含 CRC32，支持跳过条目、保留压缩数据）。
+- 实测：336.5 MB / 134 页课件 → 58.6 MB（146 ms），officecli 提取 134 页、27,285 字符正常。
+
+### OCR 质量与预算（P3/P4）
+
+- Windows OCR 渲染不再按 DIP 尺寸：新增 `ocrRenderHeight`（默认 3000 px 目标高），按 `page.Size` 反算 `DestinationWidth/Height`；修复 PowerShell 里 `$page.Size` 存入变量后读空导致宽度变成 1 px 的问题（改为直接访问属性）。
+- 新增 RapidOCR（PP-OCRv4）引擎：`ocrEngine: auto|windows|rapidocr`；**完整包内置运行时**（CPython 3.12 + `vendor/rapidocr/site-packages`，约 280 MB），无需用户装 Python，`ocrPython` 只用于覆盖成外部 venv。Windows 上用 `Windows.Data.Pdf` 把页面渲染成 PNG，再交给 `rapidocr_ocr.py` 识别，**不要求随包装 PyMuPDF**；Python 侧只用 `rapidocr_onnxruntime + opencv-python + numpy`。完整 zip 约 125 MB。
+- 逐页预算从固定 1500 ms/页改为 `ocrPageTimeoutMs`（默认 6000 ms/页），总预算 = 页数 × 每页预算，下限 15 分钟、上限 60 分钟；超时/失败写进 `meta.ocr.error` 并合并进最终错误信息，不再静默降级。
+- `meta.ocr` 记录 `{ engine, fallback, renderHeight, pages, failures, error }`；`warnings` 说明引擎回退。
+- 实测（JTG D20 第 40 页，3000 px）：Windows OCR 仍会把 `3.5` 认成 `3 巧`、`km/h` 认成 `k 禳`；RapidOCR 输出 `设计速度（km/h）`、`3`、`35`、`1/250` 等，单页含渲染约 5.7 秒。
+
+### 任务查询（P5）
+
+- `corpus_status(jobId)` 同时查 reindex（`job-*`）与 ingest（`ingest-*`）任务，返回 `kind: 'reindex' | 'ingest'`；找不到时提示可用空参查看 `active` / `ingest.active`。
+
+### 公式白名单（P6）
+
+- `formulas.js` 的 `lineIsFormula` 增加摘要行白名单：`对象：`、`文本：`、`图形关系：`、`图片：`、`表格：`、`形状：`、`位置：`、`尺寸：`、`Slide N` 开头的行不再被包成 `$$...$$`。
+
+### 验收
+
+- 新增 `tests/test-v16.mjs`（ZIP 重写 / Office 瘦身 / 公式白名单 / OCR 预算与引擎回退 / 自动授权与 deny 边界），并接入 `tools/test-all.ps1`。
+- `test-plugin-mount.mjs` 增加“新集合自动授权”用例；未授权但**已存在**的集合仍按预期拒绝。
+
+
 ## 1.5.0 — 2026-10-30
 
 ### PDF 逐页提取（文字层 + OCR 混合，保证内容完整）

@@ -4,7 +4,7 @@
 
 它把参考文档保存在一个可整体搬迁的语料根目录里，用 SQLite 建立索引，向模型提供检索/读取工具，支持常见文档和图片导入，并提供 Web 面板用于导入、浏览、权限管理、根目录迁移和软删除。
 
-当前版本：**1.5.0**。这是一个 DSH 插件，不是独立应用：安装到 DSH 插件目录并完全重启 DSH 后生效。
+当前版本：**1.6.0**。这是一个 DSH 插件，不是独立应用：安装到 DSH 插件目录并完全重启 DSH 后生效。
 
 模型操作指南（给模型看）：[`plugin/MODEL_GUIDE.md`](plugin/MODEL_GUIDE.md) —— 导入/检索/管理/删除/改集合名/权限等所有常见操作的准确流程与工具参数。
 
@@ -17,22 +17,27 @@
 - **公式保留**：HTML MathML、Word/PowerPoint 内嵌 OMML、常见 Unicode 数学符号和已有 LaTeX 统一规范成 `$...$` / `$$...$$`；PDF 的公式行也会保留并尽可能转成 LaTeX 公式块。
 - **文档导入**：Markdown、纯文本、HTML、CSV、PDF、DOCX、XLSX、PPTX 和常见图片；每次导入只写 `processed/`（供模型读）；源文件由用户自行管理。
 - **Office 高保真导入**：DOCX/XLSX/PPTX 走 officecli；PPT 额外读取对象树、分组、连接线、图表并渲染版式缩略图，Office 专用提示词要求按页解释图形逻辑，不再用「图示略」跳过；公式覆盖 OMML、Excel 公式、HTML MathML、PDF 公式行与 OCR 文本。
-- **扫描版 PDF**：Windows OCR 逐页容错，单页失败不中止整本；本机路径单文件上限 256 MiB。OCR 是异步子进程，386 页 / 24 MB 实测约 90 秒，不占宿主主线程。
+- **扫描版 PDF**：Windows OCR 逐页容错，单页失败不中止整本；本机路径单文件上限 256 MiB。OCR 是异步子进程，386 页 / 24 MB 实测约 90 秒，不占宿主主线程。渲染默认按 **3000 px 目标高**（不再按 72 DPI 的 DIP 尺寸），`ocrRenderHeight` 可调。
+- **OCR 引擎：随包 RapidOCR（默认）**：完整包内置 CPython + RapidOCR（PP-OCRv4）+ ONNX Runtime + OpenCV（约 280 MB），扫描页默认走 RapidOCR，中文表格/小数比 Windows OCR 准得多；也无需用户安装 Python。`ocrEngine: auto|windows|rapidocr` 可切换，`ocrPython` 可指向外部 venv 覆盖随包运行时。页面由 Windows.Data.Pdf 渲染成 PNG 再交给 Python，不要求 PyMuPDF；失败自动回退 Windows OCR 并在 `warnings` 里说明。逐页预算默认 6 秒/页（下限 15 分钟、上限 60 分钟），超时会明确报错而不是静默降级。
 - **PDF 逐页提取**：文字层按页拆分，**只有缺文字层/乱码的页才做 OCR**，其余页保留文字层，最后按页序合并（混合型 PDF 不再整本二选一）。`.meta.json` 里记录 `pdfPages`（总页数 / 文字层页数 / OCR 页数）。
 - **PDF 质量闸门**：pdftotext 输出会检查空格、符号、控制字符和 PDF/JPEG 二进制标记；压缩流乱码不会写入语料，缺文字层的页自动转 OCR，OCR 仍不可读则明确失败。
-- **PDF 依赖随包 pdftotext**：官方完整包都包含 `vendor/pdftotext`；缺失时文字层不可提取，只能整本走 Windows OCR（非 Windows 则明确报错），不再有纯 JS 兜底。
+- **PDF 依赖随包 pdftotext**：官方完整包都包含 `vendor/pdftotext`；缺失时文字层不可提取，只能整本 OCR（Windows OCR 或 RapidOCR；两者都不可用则明确报错），不再有纯 JS 兜底。
 - **文件名跟随源文件**：processed Markdown 默认使用源文件名词干（保留中文/空格），便于按源文件管理。
 - **集合名**：支持中文、字母、数字、空格和常用符号（≤64 字符）；不能含 `/ \ : * ? " < > |`，也不能以点或空格结尾。
 - **内置小代理**：固定提示词、单轮后台调用，不污染主会话；明确要求公式输出 LaTeX。
 - **主会话接口**：把克隆的仓库或当前会话总结成语料。
 - **Web 面板**：左侧栏语料库页面（导入、检索、文件列表、集合折叠、删除、根目录设置）；检索只负责定位，查看直接用外部软件；文件列表每行提供外部打开按钮。
 - **外部查看**：每行「用外部软件打开」主按钮优先读取 Windows 默认关联（含最近选择）直接打开；没有关联时打开系统软件选择器，由 Windows 记录本次选择；点 `▾` 可再次打开系统软件选择器。文件列表的图标/名称/类型跟随处理后语料类型；按钮只显示默认应用图标，不显示文字；右侧箭头保留系统选择器。
-- **Windows 辅助能力**：内置 OCR；完整包随附 OfficeCLI/pdftotext；Office 在没有 officecli 时回退纯 JS，PDF 文字层依赖随包 pdftotext。
+- **Windows 辅助能力**：内置 OCR（随包 RapidOCR，Windows OCR 兜底）；完整包随附 OfficeCLI/pdftotext；Office 在没有 officecli 时回退纯 JS，PDF 文字层依赖随包 pdftotext。
 - **资源护栏**：导入逐文件异步执行并定期让出事件循环（大目录导入不再整段卡住 DSH）；工具输出有硬上限（默认 24000 字符，可配置 `maxToolOutputChars`）；提示词目录与面板轮询带短 TTL 缓存。
+- **大 Office 自动瘦身**：源文件超过 256 MiB 时自动生成瘦身副本（跳过 `ppt/media/*.mp4`、`ppt/embeddings/oleObject*.bin`、`ppt/fonts/*.fntdata` 等与正文无关的条目），用 officecli 正常提取并在 `warnings` 里说明忽略了多少 MB；原文件不改。336 MB 课件实测 146 ms 瘦身到 58.6 MB，134 页提取完整。
+- **新建集合自动授权**：`corpus_ingest` / `corpus_import` / `corpus_structure` / `corpus_summarize_session` 遇到**尚不存在**且当前会话没有任何 grant 的集合时，自动补一条**只含该集合**的最小授权（优先 session，其次 workspace），返回 `autoGranted: true` 与规则原文；写审计到 `.corpus/audit/auto-grant.jsonl`，策略修改仍走带备份的 `savePolicy()`。集合已存在、命中显式 deny、策略文件损坏时一律不自动放行。
+- **任务查询统一**：`corpus_status(jobId)` 同时索引 reindex（`job-*`）与 ingest（`ingest-*`）任务，不再出现“找不到 ingest 任务”。
+- **公式白名单**：Office/PPT 的对象摘要行（`对象：`、`文本：`、`图形关系：`、`Slide N`）不再被误包成 `$$...$$`。
 
 ## 环境要求
 
-- Windows 10/11（OCR 依赖 Windows 能力）
+- Windows 10/11（OCR 依赖 Windows 能力；完整包已内置 RapidOCR 运行时，无需另装 Python）
 - 已安装并可用的 DeepSeek Harness
 - Node.js 24（或 DSH 自带 Node）
 - PowerShell 5.1（Windows 脚本和打包）
@@ -164,6 +169,10 @@ GET/POST /policy
 | `ingestMaxChars` | `24000` | 单次摄取材料上限 |
 | `ingestTimeoutMs` | `120000` | 摄取模型超时 |
 | `structureMaxChars` | `48000` | 仓库/会话结构化材料上限 |
+| `ocrEngine` | `auto` | `auto` / `windows` / `rapidocr`；`auto` 优先用随包 RapidOCR，缺失时用 Windows OCR |
+| `ocrPython` | 空 | 覆盖随包 RapidOCR 的 `python.exe` 绝对路径；留空 = 使用随包运行时（`vendor/rapidocr/`） |
+| `ocrRenderHeight` | `3000` | OCR 渲染目标像素高（0 = 按 PDF DIP 尺寸） |
+| `ocrPageTimeoutMs` | `6000` | 逐页 OCR 预算（毫秒）；总预算 = 页数 × 该值，下限 15 分钟、上限 60 分钟 |
 
 语料根也可从面板修改，选择会写入 `~/.dsh/corpus-root.json`，并支持迁移已有数据。
 

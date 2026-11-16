@@ -1,4 +1,4 @@
-﻿# 跑 dsh-plugin-corpus v1.5.0 的全部本地验收（不需要重启 DSH）。
+﻿# 跑 dsh-plugin-corpus v1.6.0 的全部本地验收（不需要重启 DSH）。
 # 用法：powershell -NoProfile -ExecutionPolicy Bypass -File tools\test-all.ps1
 $ErrorActionPreference = 'Stop'
 
@@ -62,6 +62,11 @@ Write-Host ''
 Write-Host '== 公式识别与 LaTeX 规范化 =='
 & $Node tests\test-formulas.mjs
 if ($LASTEXITCODE -ne 0) { throw 'test-formulas.mjs 失败' }
+
+Write-Host ''
+Write-Host '== v1.6 验收（Office 瘦身/公式白名单/OCR 预算/自动授权） =='
+& $Node tests\test-v16.mjs
+if ($LASTEXITCODE -ne 0) { throw 'test-v16.mjs 失败' }
 
 Write-Host ''
 Write-Host '== v1.3 导入任务与小代理回退（不再保存原件） =='

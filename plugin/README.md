@@ -9,7 +9,7 @@ dsh-plugin-corpus 是 **DeepSeek Harness (DSH)** 的文件语料库插件。
 - **模型只读 `processed/`**：插件不再保存源文件；
 - **一切访问先过 ACL**：按工作区/会话/路径授权，默认拒绝。
 
-当前版本：**1.5.0**。
+当前版本：**1.6.0**。
 
 模型操作指南（给模型看）：[`MODEL_GUIDE.md`](MODEL_GUIDE.md)。
 
@@ -138,7 +138,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 | `.md` `.markdown` `.txt` `.text` | 直接读取文本 |
 | `.html` `.htm` | 去标签，保留标题/段落/列表 |
 | `.csv` | 文本化表格 |
-| `.pdf` | 随包 `pdftotext` 抽文字层；缺文字层/乱码的页逐页用 Windows OCR，最后按页序合并 |
+| `.pdf` | 随包 `pdftotext` 抽文字层；缺文字层/乱码的页逐页 OCR（Windows OCR 或 RapidOCR），最后按页序合并 |
 | `.docx` `.xlsx` `.pptx` | 优先 OfficeCLI；失败/缺失时回退纯 JS ZIP+XML 解析 |
 | `.png` `.jpg` `.jpeg` `.webp` `.gif` `.bmp` `.tif` `.tiff` | 有可用视觉模型时结构化；否则使用 Windows OCR/占位 Markdown |
 
@@ -146,7 +146,7 @@ PDF 文本在进入 AI 前会做质量闸门：空格比例过低、符号/控�
 
 面板里的 **Vision** 不可用时会显示具体原因，通常是当前默认模型不支持图片输入。可以在 DSH profile 的插件配置中设置 `ingestVisionProvider` / `ingestVisionModel` 指向可接收图片的模型；未配置视觉模型时图片退回内置 Windows OCR。
 
-完整包随附 PDF/Office 工具。没有 `officecli` 时 Office 回退纯 JS；没有 `pdftotext` 时 PDF 文字层不可提取，只能整本走 Windows OCR（非 Windows 则无法导入 PDF）。官方 Release 只发布完整包。
+完整包随附 PDF/Office 工具。没有 `officecli` 时 Office 回退纯 JS；没有 `pdftotext` 时 PDF 文字层不可提取，只能整本 OCR（Windows OCR 或 RapidOCR；都不可用则无法导入 PDF）。官方 Release 只发布完整包。
 OfficeCLI 是 Apache-2.0；Poppler `pdftotext` 是 GPL-2.0-or-later，详见仓库根目录的
 `THIRD_PARTY_NOTICES.md`。
 
@@ -212,8 +212,12 @@ OfficeCLI 是 Apache-2.0；Poppler `pdftotext` 是 GPL-2.0-or-later，详见仓�
 | `structureMaxChars` | `48000` | 仓库/会话结构化的材料上限 |
 | `maxToolOutputChars` | `24000` | 工具返回值的硬上限；超限时逐级压缩长字符串/长数组并标记 `_truncated`，避免把超大文本写进会话历史 |
 | `perfLogMs` | `250` | 单次 `corpus_import` 超过该毫秒数时写 warn 日志，便于定位慢导入 |
+| `ocrEngine` | `auto` | `auto` / `windows` / `rapidocr`；`auto` 优先用随包 RapidOCR，缺失时用 Windows OCR |
+| `ocrPython` | 空 | 覆盖随包 RapidOCR 的 `python.exe` 绝对路径；留空 = 使用随包运行时（`vendor/rapidocr/`） |
+| `ocrRenderHeight` | `3000` | OCR 渲染目标像素高（0 = 按 PDF DIP 尺寸）；中文表格建议 3000 |
+| `ocrPageTimeoutMs` | `6000` | 逐页 OCR 预算（毫秒）；总预算 = 页数 × 该值，下限 15 分钟、上限 60 分钟 |
 
-> **性能说明（v1.5.0）**：插件跑在 DSH 宿主进程里，任何同步长任务都会连带卡住 GUI。
+> **性能说明（v1.4.2 起）**：插件跑在 DSH 宿主进程里，任何同步长任务都会连带卡住 GUI。
 > 现在导入按文件异步执行、每 32 个文件或 8ms 让出一次事件循环；单次导入只预热前 40 份目录，
 > 其余按需生成。提示词目录缓存 60 秒、面板轮询缓存 1.5 秒，导入/重建/删除后主动失效。
 
@@ -268,7 +272,11 @@ Invoke-RestMethod 'http://127.0.0.1:<port>/api/dsh-plugin-corpus/gallery?limit=1
 - `corpus_read` 只读 `processed/`；
 - 删除是软删除，内容移到 `.corpus/trash/`；
 - 浏览器上传单文件默认 25 MiB；本机路径单文件默认 256 MiB；格式白名单见 `/import/targets`；
-- 扫描版 PDF 的 OCR 依赖 Windows OCR，速度比文字层提取慢（约 0.25 秒/页）；混合型 PDF 只 OCR 缺文字层的页；
+- **超过 256 MiB 的 Office 文件**会自动生成瘦身副本（跳过内嵌视频/音频、`oleObject*.bin`、`fntdata/odttf` 字体），用 officecli 正常提取；原文件不改，`warnings` 会说明忽略了多少 MB。瘦身后仍超限才报错；
+- 扫描版 PDF 默认用**随包 RapidOCR**（渲染 3000 px 高，单页约 3–6 秒含渲染）；混合型 PDF 只 OCR 缺文字层的页。`ocrPython` 可指向外部 venv 覆盖随包运行时，失败自动回退 Windows OCR；
+- 逐页 OCR 预算 = 页数 × `ocrPageTimeoutMs`（默认 6000，下限 15 分钟、上限 60 分钟）；超时会在错误里写明“OCR 错误”，不会静默返回空文本；
+- **新建集合自动授权**：仅当集合尚不存在、当前会话没有任何 grant、且没有显式 deny 时，自动补一条 `paths: [<该集合>]` 的最小授权（优先 session，其次 workspace）；审计写在 `.corpus/audit/auto-grant.jsonl`，可在「语料权限」面板撤销。集合已存在时仍需人工授权；
+- `corpus_status(jobId)` 同时接受 reindex 的 `job-*` 与 ingest 的 `ingest-*`；
 - 访问策略文件、本机 ACL 配置不要提交到 Git。
 
 ---

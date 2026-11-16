@@ -98,10 +98,11 @@ dsh-plugin-corpus/
 │     ├─ lock.js            跨进程锁（.corpus/index/.lock）
 │     ├─ access.js          ACL 判定：deny > grants > default；workspace/session；过期
 │     ├─ policy.js          策略文件读写、校验、备份
+│     ├─ autogrant.js       新建集合的最小自动授权 + 审计（.corpus/audit）
 │     ├─ extract.js         19 种格式 → 文本/图片；HTML、Office、PDF、OCR 调度
-│     ├─ zip.js             纯 JS ZIP 中央目录读取（deflate）
+│     ├─ zip.js             纯 JS ZIP 读取 + 重写（deflate；大 Office 瘦身）
 │     ├─ office.js          纯 JS docx/xlsx/pptx XML 解析兜底
-│     ├─ pdf.js             随包 pdftotext + 逐页质量闸门 + PowerShell OCR
+│     ├─ pdf.js             随包 pdftotext + 逐页质量闸门 + OCR 引擎调度（Windows/RapidOCR）
 │     ├─ ingest.js          导入任务：路径/上传、per-import 布局、AI 回退、重建
 │     ├─ ingest-agent.js    内置小代理：固定 system prompt 的单轮 LLM 调用（文本/图片）
 │     ├─ structure.js       主会话接口：仓库/目录/文件/文本 → 结构化 processed
@@ -109,7 +110,8 @@ dsh-plugin-corpus/
 │     ├─ settings.js        根目录解析/迁移、junction/copy、corpus-root.json
 │     ├─ trash.js           软删除（文档/集合 → .corpus/trash）
 │     ├─ client.js          ★ 浏览器 UI：左栏页、右栏权限、导入、文件列表、设置
-│     ├─ ocr_windows.ps1    内置 Windows OCR（PDF 渲染 + Media.Ocr）
+│     ├─ ocr_windows.ps1    内置 Windows OCR/PDF 渲染（3000 px，可选 -RenderOnly）
+│     ├─ rapidocr_ocr.py    RapidOCR（PP-OCRv4）外部 Python 识别脚本（PNG 清单输入）
 ├─ tests/                   纯 Node 验收（不依赖第三方测试框架）
 ├─ tools/                   部署、测试、打包脚本
 ├─ README.md                安装、使用与工具/API 总览

@@ -236,7 +236,15 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
         job.current = { source: display, stage: 'extract', index: index + 1, total: all.length }
         let extracted
         try {
-          extracted = await extractDocument(file, { maxBytes: MAX_SOURCE_BYTES })
+          extracted = await extractDocument(file, {
+            maxBytes: MAX_SOURCE_BYTES,
+            ocr: {
+              engine: config && config.ocrEngine,
+              python: config && config.ocrPython,
+              renderHeight: config && config.ocrRenderHeight,
+              pageTimeoutMs: config && config.ocrPageTimeoutMs,
+            },
+          })
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
           items.push({ source: display, ok: false, error: message })

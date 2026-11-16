@@ -1,7 +1,7 @@
 # dsh-plugin-corpus 模型操作指南（MODEL_GUIDE）
 
 > 读者：DSH 中的模型（也适合用户查阅）。
-> 适用版本：**1.5.0+**（PDF 逐页提取、无纯 JS PDF 兜底）。
+> 适用版本：**1.6.0+**（PDF 逐页提取、随包 RapidOCR、大 Office 自动瘦身、新建集合自动授权）。
 > 目标：用户提出“导入 / 查找 / 整理 / 删除 / 重建 / 改合集”等语料库操作时，模型能选对工具、填对参数、按正确顺序执行并验证结果。
 
 ---
@@ -125,6 +125,7 @@
 
 返回 `active`（正在跑的任务）、`recent`（最近任务，含 `result`）、`ingest`（导入任务）、`collections`（每集合 docs/chunks/indexedAt）。
 判断“现在能不能写”：`active == null` 且 `ingest.active == null`。
+传 `jobId` 时会同时查 reindex（`job-*`）与 ingest（`ingest-*`），返回 `kind` 区分；找不到时返回提示。
 
 ---
 
@@ -150,6 +151,7 @@
 - 单次最多 5000 个文件（可传 `maxFiles`，上限 20000）。
 - 返回 `imported/skipped/bytes/fileCount/files`（最多 100 条）、`notes`、`outlinesGenerated/outlinesPending`、`jobId`。
 - 导入后默认触发后台重建；`jobId` 非空时用 `corpus_status` 轮询。
+- 目标集合不存在且当前会话没有任何 grant 时，插件会自动补一条只含该集合的最小授权（见 §5.6），返回 `autoGranted`。
 
 ### 4.2 `corpus_ingest` —— 导入文档（PDF/Office/HTML/图片），转 Markdown
 
@@ -159,11 +161,14 @@
 { "path": "C:\\Users\\me\\Downloads\\机械原理.pdf", "collection": "机械", "ai": false }
 ```
 
-- **后台任务**：立即返回 `started/jobId/state`；同一时刻只能跑一个 ingest，忙时返回 `busy:true`，等 `corpus_status` 里 `ingest.active` 为空再试。
+- **后台任务**：立即返回 `started/jobId/state`；同一时刻只能跑一个 ingest，忙时返回 `busy:true`，等 `corpus_status` 里 `ingest.active` 为空再试。返回的 `jobId` 可直接用于 `corpus_status({jobId})`。
 - `ai:true`（默认）会让内置小代理再总结/结构化一次（更慢，消耗模型调用）；`ai:false` 只做确定性提取，通常够用。
-- PDF 是**逐页提取**：文字层用随包 `pdftotext`，缺文字层/乱码的页逐页用 Windows OCR，最后按页合并；扫描书 386 页约 90 秒，期间宿主保持响应。
+- PDF 是**逐页提取**：文字层用随包 `pdftotext`，缺文字层/乱码的页逐页 OCR，最后按页合并；扫描书 386 页约 90 秒，期间宿主保持响应。
+- OCR 引擎：默认 `auto`（完整包内置 RapidOCR，优先用它；`ocrPython` 可覆盖为外部 venv）；渲染默认 3000 px 高，逐页预算默认 6 秒（总预算下限 15 分钟、上限 60 分钟），超时会明确报错。结果在 `.meta.json` 的 `meta.ocr` 里记录引擎/页数/失败数。
+- 超过 256 MiB 的 Office 文件会**自动瘦身**（跳过内嵌视频/字体/oleObject），`warnings` 会说明忽略了多少 MB；原文件不改。瘦身后仍超限才失败。
+- **新建集合自动授权**：目标集合不存在、当前会话没有任何 grant 时，插件自动补一条只含该集合的最小授权，返回 `autoGranted: true` + `autoGrant`（规则/备份/审计）。集合已存在、命中显式 deny、策略损坏时不自动放行。
 - 每次导入生成 `<collection>/<时间戳>-<文件名>/processed/<文件名>.md` + `.meta.json`；重复导入不会覆盖，会生成新文件夹。
-- 限制：单次最多 200 个文件；浏览器上传单文件 25 MiB，本机路径单文件 256 MiB。
+- 限制：单次最多 200 个文件；浏览器上传单文件 25 MiB，本机路径单文件 256 MiB（Office 超限可自动瘦身）。
 - `prefix` 只影响目录层级，不影响提取。
 
 ### 4.3 `corpus_structure` —— 仓库/网页文本 → 结构化总结入库
@@ -272,14 +277,16 @@
 
 大纲按新路径哈希，移动后 `corpus_outline` 会自动生成新的，不需要额外处理。
 
-### 5.6 权限管理（模型只读）
+### 5.6 权限管理（模型只读，唯一例外见下）
 
 - 查看：`corpus_access`；
-- 修改：**模型不能改**。指导用户打开右栏「语料权限」：
+- 修改：**模型默认不能改**。指导用户打开右栏「语料权限」：
   - 当前会话 / 当前工作区加 grant（可设有效期）；
   - 「全局访问」用 `workspace: "*"` 让某集合对所有工作区开放；
   - 默认动作 allow/deny 的切换也在面板。
-- 权限不足的典型报错：`没有访问集合 X 的权限` / `没有导入到集合 X 的权限`。
+- **唯一例外（v1.6）**：`corpus_ingest` / `corpus_import` / `corpus_structure` / `corpus_summarize_session` 写一个**尚不存在**的集合时，插件会自动补一条最小授权（只含该集合；优先 session，其次 workspace），并写审计 `.corpus/audit/auto-grant.jsonl`。这不是模型手改文件：模型只调用工具，授权由插件完成，返回 `autoGranted: true`。
+- 自动授权的拒绝条件：集合已存在、命中显式 deny、策略文件损坏。遇到这些情况提示用户去面板处理。
+- 权限不足的典型报错：`没有访问集合 X 的权限` / `没有导入到集合 X 的权限（自动授权失败：…）`。
 
 ### 5.7 根目录迁移（面板操作）
 
@@ -358,7 +365,8 @@
 | `corpus_search` | 默认 8 条，最多 50；关键词最多 4 个 |
 | `corpus_catalog` / `corpus_list` | 每集合默认 200 条 |
 | `corpus_import` | 单次默认 5000 文件（上限 20000）；单文件默认 4 MiB；只收文本 |
-| `corpus_ingest` | 单次 200 文件；上传 25 MiB/文件；本机 256 MiB/文件 |
+| `corpus_ingest` | 单次 200 文件；上传 25 MiB/文件；本机 256 MiB/文件（Office 超限自动瘦身） |
+| OCR | 渲染 3000 px 高；逐页预算默认 6000 ms（总预算 15–60 分钟）；RapidOCR 随包（`ocrPython` 可覆盖） |
 | 后台任务 | reindex 单任务、ingest 单任务 |
 | 集合名 | ≤64 字符，规则见 §1 |
 | 文本截断 | 单文档提取文本上限 8 MiB（超出截断） |
@@ -382,7 +390,7 @@
 ## 8. 安全与禁忌
 
 - **不要**直接读写 `.corpus/`（索引、大纲、回收站、临时目录）；只有 §5.3–5.5 的文件系统操作例外，且需用户确认。
-- **不要**修改 `~/.dsh/corpus-access.json`；权限只能由用户在面板改。
+- **不要**修改 `~/.dsh/corpus-access.json`；权限只能由用户在面板改。**唯一例外**是新建集合时插件自动补的最小授权（§5.6），由工具完成，模型不得手改该文件。
 - **不要**在用户没确认时删除集合、覆盖文件、批量移动。
 - **不要**用 `corpus_read` 读非语料路径（源码、系统文件）；它不是通用文件浏览器。
 - **不要**在正文里引用没读过的内容；语料内容以 `corpus_read` 结果为准。

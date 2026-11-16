@@ -272,6 +272,8 @@ export function runWindowsOcr(file, mode = 'image', timeoutMs = 900000, options 
     ]
     const pages = typeof options.pages === 'string' ? options.pages.trim() : ''
     if (pages !== '') args.push('-Pages', pages)
+    const renderHeight = Number(options.renderHeight) || 0
+    if (renderHeight > 0) args.push('-RenderHeight', String(Math.round(renderHeight)))
     execFile(powershell, args, {
       encoding: 'utf8',
       maxBuffer: 128 * 1024 * 1024,
@@ -285,4 +287,186 @@ export function runWindowsOcr(file, mode = 'image', timeoutMs = 900000, options 
       resolve(normalizeOcrText(String(stdout || '').trim()))
     })
   })
+}
+
+/* ------------------------------------------------------------------
+ * OCR 引擎选择（v1.6）：Windows OCR 兜底 + 可选 RapidOCR（PP-OCRv4，中文表格更准）。
+ * RapidOCR 通过外部 Python 虚拟环境调用（插件不打包 onnxruntime）；未配置时自动跳过。
+ * ------------------------------------------------------------------ */
+
+export function rapidOcrScriptPath() {
+  return path.join(HERE, 'rapidocr_ocr.py')
+}
+
+/** 随包 RapidOCR 的 Python 解释器（vendor/rapidocr/python/python.exe）。 */
+export function bundledRapidOcrPython() {
+  const candidate = path.join(HERE, '..', 'vendor', 'rapidocr', 'python', 'python.exe')
+  try { return fs.statSync(candidate).isFile() ? candidate : null } catch { return null }
+}
+
+/** 随包 RapidOCR 的依赖目录（vendor/rapidocr/site-packages）。 */
+export function bundledRapidOcrSitePackages() {
+  const candidate = path.join(HERE, '..', 'vendor', 'rapidocr', 'site-packages')
+  try { return fs.statSync(candidate).isDirectory() ? candidate : null } catch { return null }
+}
+
+/** 是否可用 RapidOCR：随包 Python 或外部配置的 python + 识别脚本。 */
+export function rapidOcrAvailable(options = {}) {
+  const configured = String(options.python || '').trim()
+  if (configured !== '') {
+    try {
+      if (!fs.statSync(configured).isFile()) return false
+    } catch {
+      return false
+    }
+  } else if (bundledRapidOcrPython() === null) {
+    return false
+  }
+  return fs.existsSync(rapidOcrScriptPath())
+}
+
+/**
+ * 选择 OCR 引擎。
+ * @param {{engine?: 'auto'|'windows'|'rapidocr', python?: string}} options
+ * @returns {{engine: 'windows'|'rapidocr'|null, fallback: boolean, reason: string}}
+ */
+export function resolveOcrEngine(options = {}) {
+  const want = String(options.engine || 'auto').trim().toLowerCase()
+  const rapid = rapidOcrAvailable(options)
+  const windows = ocrAvailable()
+  if (want === 'windows') {
+    return windows
+      ? { engine: 'windows', fallback: false, reason: '' }
+      : { engine: null, fallback: false, reason: '当前系统没有可用的 Windows OCR' }
+  }
+  if (want === 'rapidocr') {
+    if (rapid) return { engine: 'rapidocr', fallback: false, reason: '' }
+    return windows
+      ? { engine: 'windows', fallback: true, reason: 'RapidOCR 不可用（随包组件缺失且未配置 ocrPython），已回退 Windows OCR' }
+      : { engine: null, fallback: false, reason: 'RapidOCR 与 Windows OCR 都不可用' }
+  }
+  if (rapid) return { engine: 'rapidocr', fallback: false, reason: '' }
+  if (windows) return { engine: 'windows', fallback: false, reason: '' }
+  return { engine: null, fallback: false, reason: '本机没有可用的 OCR 引擎' }
+}
+
+/** 逐页 OCR 的时间预算：每页默认 6 s，下限 15 分钟、上限 60 分钟。 */
+export function ocrTimeoutMs(pageCount, options = {}) {
+  const pages = Math.max(1, Number(pageCount) || 1)
+  const perPage = Math.max(1000, Math.min(120000, Number(options.pageTimeoutMs) || 6000))
+  return Math.min(60 * 60 * 1000, Math.max(15 * 60 * 1000, pages * perPage))
+}
+
+function execFileAsync(executable, args, options) {
+  return new Promise((resolve, reject) => {
+    execFile(executable, args, options, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(String(stderr || error.message).trim()))
+        return
+      }
+      resolve(String(stdout || ''))
+    })
+  })
+}
+
+/** 用 Windows.Data.Pdf 把指定页渲染成 PNG（供 RapidOCR 识别），返回 [{page, path}]。 */
+async function renderPdfPages(file, pages, renderHeight, outDir, timeoutMs) {
+  const powershell = findPowerShell()
+  if (powershell === null) throw new Error('找不到 Windows PowerShell，无法渲染 PDF 页面')
+  const script = ocrScriptPath()
+  if (!fs.existsSync(script)) throw new Error('缺少内置 ocr_windows.ps1')
+  const nativeFile = String(file).split('/').join('\\')
+  const args = [
+    '-NoProfile',
+    '-ExecutionPolicy', 'Bypass',
+    '-File', script,
+    '-Path', nativeFile,
+    '-Mode', 'pdf',
+    '-RenderOnly',
+    '-OutDir', outDir,
+    '-RenderHeight', String(Math.round(Number(renderHeight) || 3000)),
+  ]
+  if (typeof pages === 'string' && pages.trim() !== '') args.push('-Pages', pages.trim())
+  const stdout = await execFileAsync(powershell, args, {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: timeoutMs,
+    windowsHide: true,
+  })
+  const entries = []
+  for (const line of stdout.split(/\r?\n/)) {
+    const match = line.match(/^--- Page (\d+) (.+) ---$/)
+    if (match) entries.push({ page: Number(match[1]), path: match[2].trim() })
+  }
+  if (entries.length === 0) throw new Error('PDF 页面渲染没有产出（检查 PowerShell 输出）')
+  return entries
+}
+
+/**
+ * 调 RapidOCR（外部 Python 脚本：PP-OCRv4 识别）。
+ * Windows 上先用 Windows.Data.Pdf 渲染成 3000px PNG，再交给 Python 识别（不依赖 PyMuPDF）；
+ * 其它平台退化为传 PDF 路径（需要 pymupdf）。
+ *
+ * @param {string} file PDF 路径。
+ * @param {number} timeoutMs 子进程超时。
+ * @param {{python?: string, pages?: string, renderHeight?: number}} options
+ */
+export async function runRapidOcr(file, timeoutMs, options = {}) {
+  const configured = String(options.python || '').trim()
+  const python = configured !== '' ? configured : bundledRapidOcrPython()
+  if (python === null || python === '') {
+    throw new Error('没有可用的 RapidOCR Python（随包 vendor/rapidocr 缺失，且未配置 ocrPython）')
+  }
+  const script = rapidOcrScriptPath()
+  if (!fs.existsSync(script)) throw new Error('缺少内置 rapidocr_ocr.py')
+  const env = { ...process.env }
+  if (configured === '') {
+    // 随包解释器不会自动找 vendor/site-packages；用 PYTHONPATH 指过去。
+    const sitePackages = bundledRapidOcrSitePackages()
+    if (sitePackages !== null) {
+      env.PYTHONPATH = env.PYTHONPATH ? `${sitePackages};${env.PYTHONPATH}` : sitePackages
+    }
+  }
+  let renderDir = null
+  try {
+    const args = [script]
+    const useWindowsRender = process.platform === 'win32' && findPowerShell() !== null
+    if (useWindowsRender) {
+      renderDir = fs.mkdtempSync(path.join(path.dirname(HERE), 'rapidocr-tmp-'))
+      const entries = await renderPdfPages(
+        file,
+        typeof options.pages === 'string' ? options.pages : '',
+        options.renderHeight || 3000,
+        renderDir,
+        timeoutMs,
+      )
+      const manifest = path.join(renderDir, 'manifest.json')
+      fs.writeFileSync(manifest, JSON.stringify(entries), 'utf8')
+      args.push('--manifest', manifest)
+    } else {
+      args.push('--path', file)
+      if (typeof options.pages === 'string' && options.pages.trim() !== '') args.push('--pages', options.pages.trim())
+      args.push('--render-height', String(Math.round(Number(options.renderHeight) || 3000)))
+    }
+    const stdout = await execFileAsync(python, args, {
+      encoding: 'utf8',
+      maxBuffer: 128 * 1024 * 1024,
+      timeout: timeoutMs,
+      windowsHide: true,
+      env,
+    })
+    return normalizeOcrText(stdout)
+  } catch (error) {
+    throw new Error(`RapidOCR 失败：${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    if (renderDir !== null) {
+      try { fs.rmSync(renderDir, { recursive: true, force: true }) } catch { /* 清理失败不影响结果 */ }
+    }
+  }
+}
+
+/** 按引擎名调用对应 OCR。 */
+export function runOcr(engine, file, mode, timeoutMs, options = {}) {
+  if (engine === 'rapidocr') return runRapidOcr(file, timeoutMs, options)
+  return runWindowsOcr(file, mode, timeoutMs, options)
 }

@@ -13,7 +13,8 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { extractOffice, extractOfficeFormulas, extractXlsxFormulas } from './office.js'
-import { compressPageRanges, isUsablePdfText, mergePdfPageTexts, needsOcrPage, ocrAvailable, parseOcrPages, pdfExtractorAvailability, pdfTextQuality, runBundledPdftotext, runWindowsOcr, splitPdfPages } from './pdf.js'
+import { compressPageRanges, isUsablePdfText, mergePdfPageTexts, needsOcrPage, ocrAvailable, ocrTimeoutMs, parseOcrPages, pdfExtractorAvailability, pdfTextQuality, resolveOcrEngine, runBundledPdftotext, runOcr, runWindowsOcr, splitPdfPages } from './pdf.js'
+import { rewriteZip } from './zip.js'
 import { extractFormulaLines, latexifyFormulaLines, mathmlToLatex, normalizeLatex } from './formulas.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -324,9 +325,53 @@ function runOfficecli(file, ext, timeoutMs = 120000) {
 }
 
 /**
+ * 大 Office 文件瘦身：只跳过与正文无关的内嵌媒体/字体/嵌入对象，其余条目按压缩原样复制。
+ * 不修改 rels 与 [Content_Types].xml（officecli 容忍悬空引用），也不改动原文件。
+ */
+const OFFICE_SLIM_PATTERNS = [
+  /(?:^|\/)(?:ppt|word|xl)\/media\/[^/]+\.(?:mp4|m4v|mov|avi|wmv|mkv|webm|mp3|wav|m4a|aac|flac|ogg)$/i,
+  /(?:^|\/)(?:ppt|word|xl)\/embeddings\/oleObject\d+\.bin$/i,
+  /(?:^|\/)(?:ppt|word|xl)\/fonts\/[^/]+\.(?:fntdata|odttf)$/i,
+]
+
+function shouldSkipOfficeEntry(name) {
+  return OFFICE_SLIM_PATTERNS.some((pattern) => pattern.test(name))
+}
+
+function formatMb(bytes) {
+  return (Number(bytes) / 1024 / 1024).toFixed(1)
+}
+
+/**
+ * 当 Office 源文件超过上限时，生成一份去掉内嵌视频/字体/oleObject 的瘦身副本。
+ * @returns {{path: string, tempDir: string, removed: number, removedBytes: number, bytes: number}}
+ */
+export async function slimOfficeFile(file, maxBytes) {
+  const buffer = await fs.promises.readFile(file)
+  const result = rewriteZip(buffer, { skip: shouldSkipOfficeEntry })
+  if (result.skipped === 0 || result.buffer.length >= buffer.length) {
+    throw new Error('没有可省略的内嵌媒体/字体/嵌入对象')
+  }
+  if (result.buffer.length > maxBytes) {
+    throw new Error(`瘦身后仍有 ${formatMb(result.buffer.length)} MB，超过 ${Math.round(maxBytes / 1024 / 1024)} MB 上限`)
+  }
+  const tempDir = fs.mkdtempSync(path.join(path.dirname(HERE), 'corpus-slim-'))
+  const target = path.join(tempDir, path.basename(file))
+  await fs.promises.writeFile(target, result.buffer)
+  return {
+    path: target,
+    tempDir,
+    removed: result.skipped,
+    removedBytes: result.skippedBytes,
+    bytes: result.buffer.length,
+  }
+}
+
+/**
  * 提取一个文件的文本/图片信息。
  * @param file - 绝对/相对文件路径。
- * @param options.maxBytes - 单文件上限（默认 100 MiB）。
+ * @param options.maxBytes - 单文件上限（默认 256 MiB）。
+ * @param options.ocr - OCR 配置：{engine:'auto'|'windows'|'rapidocr', python, renderHeight, pageTimeoutMs}。
  * @returns {ok, kind:'text'|'image', format, text, title, warnings, meta}
  */
 export async function extractDocument(file, options = {}) {
@@ -335,10 +380,23 @@ export async function extractDocument(file, options = {}) {
   try { stat = await fs.promises.lstat(file) } catch { throw new Error(`找不到文件：${file}`) }
   if (stat.isSymbolicLink()) throw new Error('不允许提取符号链接')
   if (!stat.isFile()) throw new Error(`不是文件：${file}`)
-  if (stat.size > maxBytes) throw new Error(`文件超过上限 ${Math.round(maxBytes / 1024 / 1024)} MB：${path.basename(file)}`)
   const ext = path.extname(file).toLowerCase()
   if (!SUPPORTED_EXTENSIONS.includes(ext)) throw new Error(`不支持的格式：${ext || '(无扩展名)'}`)
   const warnings = []
+  let workFile = file
+  let slim = null
+  if (stat.size > maxBytes) {
+    if (!OFFICE_EXTS.has(ext)) {
+      throw new Error(`文件超过上限 ${Math.round(maxBytes / 1024 / 1024)} MB：${path.basename(file)}`)
+    }
+    try {
+      slim = await slimOfficeFile(file, maxBytes)
+      workFile = slim.path
+      warnings.push(`源文件 ${formatMb(stat.size)} MB 超过 ${Math.round(maxBytes / 1024 / 1024)} MB：已忽略 ${slim.removed} 个内嵌媒体/字体/嵌入对象（约 ${formatMb(slim.removedBytes)} MB），用瘦身副本解析；原文件未改动`)
+    } catch (error) {
+      throw new Error(`文件超过上限 ${Math.round(maxBytes / 1024 / 1024)} MB 且无法瘦身：${path.basename(file)}（${error instanceof Error ? error.message : String(error)}）`)
+    }
+  }
   const fallbackTitle = path.basename(file, ext)
   let text = ''
   let title = null
@@ -346,26 +404,28 @@ export async function extractDocument(file, options = {}) {
   let kind = 'text'
   let mediaType = null
   let meta = { bytes: stat.size }
+  if (slim !== null) meta = { ...meta, slimmed: true, slimRemoved: slim.removed, slimRemovedBytes: slim.removedBytes }
 
-  if (TEXT_EXTS.has(ext)) {
-    text = normalizeLatex(await fs.promises.readFile(file, 'utf8'))
-    title = titleFromText(text, fallbackTitle)
-    extractor = 'text'
-  } else if (HTML_EXTS.has(ext)) {
-    const html = await fs.promises.readFile(file, 'utf8')
-    const converted = htmlToText(html)
-    text = converted.text
-    title = converted.title || titleFromText(text, fallbackTitle)
-    extractor = 'html'
-  } else if (OFFICE_EXTS.has(ext)) {
-    const buffer = await fs.promises.readFile(file)
+  try {
+    if (TEXT_EXTS.has(ext)) {
+      text = normalizeLatex(await fs.promises.readFile(workFile, 'utf8'))
+      title = titleFromText(text, fallbackTitle)
+      extractor = 'text'
+    } else if (HTML_EXTS.has(ext)) {
+      const html = await fs.promises.readFile(workFile, 'utf8')
+      const converted = htmlToText(html)
+      text = converted.text
+      title = converted.title || titleFromText(text, fallbackTitle)
+      extractor = 'html'
+    } else if (OFFICE_EXTS.has(ext)) {
+    const buffer = await fs.promises.readFile(workFile)
     text = ''
     let officejs = null
     try { officejs = extractOffice(buffer, ext) } catch { /* officecli 主路径失败时再报 */ }
     let cli = null
     if (bundledOfficecli() !== null) {
       try {
-        cli = await runOfficecli(file, ext)
+        cli = await runOfficecli(workFile, ext)
         const cliText = cliTextOf(cli.textData, ext)
         if (String(cliText || '').trim() === '') throw new Error('officecli 没有返回可读内容')
         extractor = 'officecli'
@@ -423,18 +483,23 @@ export async function extractDocument(file, options = {}) {
       }
     }
   } else if (ext === '.pdf') {
-    const canOcr = ocrAvailable()
+    const ocrConfig = options.ocr && typeof options.ocr === 'object' ? options.ocr : {}
+    const ocrChoice = resolveOcrEngine(ocrConfig)
+    const canOcr = ocrChoice.engine !== null
     const pdfAvailable = pdfExtractorAvailability()
+    if (ocrChoice.reason !== '') warnings.push(ocrChoice.reason)
     text = ''
     let textPages = []
     let pageCount = 0
     let ocrMap = new Map()
     let ocrRuns = 0
+    let ocrError = null
+    let ocrFailures = 0
 
     // 第一层：文字层（整本 pdftotext），按 \f 拆页后逐页判断。
     if (pdfAvailable.bundled) {
       try {
-        const candidate = await runBundledPdftotext(file)
+        const candidate = await runBundledPdftotext(workFile)
         textPages = splitPdfPages(candidate)
         pageCount = textPages.length
         const missing = []
@@ -444,19 +509,42 @@ export async function extractDocument(file, options = {}) {
         if (missing.length > 0 && canOcr) {
           // 逐页兜底：只为缺文字层/乱码的页跑 OCR，文字页原样保留。
           const pagesSpec = compressPageRanges(missing)
-          const timeoutMs = Math.min(30 * 60 * 1000, Math.max(15 * 60 * 1000, missing.length * 1500))
-          warnings.push(`PDF 有 ${missing.length}/${pageCount} 页没有可读文字层，仅对这些页使用 OCR`)
+          const timeoutMs = ocrTimeoutMs(missing.length, ocrConfig)
+          warnings.push(`PDF 有 ${missing.length}/${pageCount} 页没有可读文字层，仅对这些页使用 OCR（${ocrChoice.engine}）`)
           try {
-            const stdout = await runWindowsOcr(file, 'pdf', timeoutMs, { pages: pagesSpec })
+            const stdout = await runOcr(ocrChoice.engine, workFile, 'pdf', timeoutMs, {
+              pages: pagesSpec,
+              python: ocrConfig.python,
+              renderHeight: ocrConfig.renderHeight,
+            })
             const parsed = parseOcrPages(stdout)
             ocrMap = parsed.pages
             ocrRuns = 1
+            ocrFailures = parsed.failures.size
             if (parsed.failures.size > 0) {
               const first = [...parsed.failures.keys()].slice(0, 10).join(', ')
               warnings.push(`有 ${parsed.failures.size} 页 OCR 失败（第 ${first}${parsed.failures.size > 10 ? '…' : ''} 页）`)
             }
           } catch (error) {
-            warnings.push(`PDF 逐页 OCR 失败：${error instanceof Error ? error.message : String(error)}`)
+            ocrError = error instanceof Error ? error.message : String(error)
+            warnings.push(`PDF 逐页 OCR 失败：${ocrError}`)
+            // RapidOCR 运行失败（缺依赖/脚本异常）时回退 Windows OCR，保证有兜底。
+            if (ocrChoice.engine === 'rapidocr' && ocrAvailable()) {
+              try {
+                const fallback = await runWindowsOcr(workFile, 'pdf', timeoutMs, {
+                  pages: pagesSpec,
+                  renderHeight: ocrConfig.renderHeight,
+                })
+                const parsed = parseOcrPages(fallback)
+                ocrMap = parsed.pages
+                ocrRuns = 2
+                ocrFailures = parsed.failures.size
+                ocrError = null
+                warnings.push('RapidOCR 不可用，已回退 Windows OCR')
+              } catch (fallbackError) {
+                warnings.push(`回退 Windows OCR 也失败：${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`)
+              }
+            }
           }
         } else if (missing.length > 0) {
           warnings.push(`PDF 有 ${missing.length}/${pageCount} 页没有可读文字层，且当前系统没有可用的 OCR`)
@@ -472,14 +560,35 @@ export async function extractDocument(file, options = {}) {
     // 第二层（整体）：没有文字层（pdftotext 缺失/失败）时整本 OCR。
     if (pageCount === 0 && canOcr) {
       try {
-        const stdout = await runWindowsOcr(file, 'pdf')
+        const stdout = await runOcr(ocrChoice.engine, workFile, 'pdf', ocrTimeoutMs(1, ocrConfig), {
+          python: ocrConfig.python,
+          renderHeight: ocrConfig.renderHeight,
+        })
         const parsed = parseOcrPages(stdout)
         ocrMap = parsed.pages
         ocrRuns = 1
+        ocrFailures = parsed.failures.size
         pageCount = Math.max(0, ...[...parsed.pages.keys()], ...[...parsed.failures.keys()])
         if (parsed.failures.size > 0) warnings.push(`有 ${parsed.failures.size} 页 OCR 失败`)
       } catch (error) {
-        warnings.push(`PDF OCR 失败：${error instanceof Error ? error.message : String(error)}`)
+        ocrError = error instanceof Error ? error.message : String(error)
+        warnings.push(`PDF OCR 失败：${ocrError}`)
+        if (ocrChoice.engine === 'rapidocr' && ocrAvailable()) {
+          try {
+            const fallback = await runWindowsOcr(workFile, 'pdf', ocrTimeoutMs(1, ocrConfig), {
+              renderHeight: ocrConfig.renderHeight,
+            })
+            const parsed = parseOcrPages(fallback)
+            ocrMap = parsed.pages
+            ocrRuns = 2
+            ocrFailures = parsed.failures.size
+            ocrError = null
+            pageCount = Math.max(0, ...[...parsed.pages.keys()], ...[...parsed.failures.keys()])
+            warnings.push('RapidOCR 不可用，已回退 Windows OCR')
+          } catch (fallbackError) {
+            warnings.push(`回退 Windows OCR 也失败：${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`)
+          }
+        }
       }
     }
 
@@ -488,6 +597,7 @@ export async function extractDocument(file, options = {}) {
     if (mergedText !== '') text = mergedText
     if (merged.ocrPages > 0) {
       extractor = merged.textPages > 0 ? 'pdf-mixed' : 'windows-ocr'
+      warnings.push(`本次有 ${merged.ocrPages} 页来自 OCR（${ocrChoice.engine || 'unknown'}），数值/表格建议对照原件核对`)
     } else if (merged.textPages > 0) {
       extractor = 'bundled-pdftotext'
     }
@@ -495,9 +605,10 @@ export async function extractDocument(file, options = {}) {
       const detail = pageCount > 0
         ? `（共 ${pageCount} 页：文字层 ${merged.textPages} 页、OCR ${merged.ocrPages} 页、不可读 ${merged.weakPages + merged.emptyPages} 页）`
         : ''
+      const ocrNote = ocrError !== null ? `；OCR 错误：${ocrError}` : ''
       throw new Error(pdfAvailable.bundled
-        ? `PDF 没有可读文字层，且 OCR 不可用或结果不可读${detail}；请检查 PDF 是否为扫描件/加密件`
-        : `PDF 文字提取需要随包 pdftotext（官方完整包包含）${detail}；当前安装缺少 vendor/pdftotext，且没有可用的 OCR`)
+        ? `PDF 没有可读文字层，且 OCR 不可用或结果不可读${detail}${ocrNote}；请检查 PDF 是否为扫描件/加密件`
+        : `PDF 文字提取需要随包 pdftotext（官方完整包包含）${detail}${ocrNote}；当前安装缺少 vendor/pdftotext，且没有可用的 OCR`)
     }
     const quality = pdfTextQuality(text)
     meta = {
@@ -510,6 +621,14 @@ export async function extractDocument(file, options = {}) {
         weak: merged.weakPages,
         empty: merged.emptyPages,
         ocrRuns,
+      },
+      ocr: {
+        engine: ocrChoice.engine,
+        fallback: ocrChoice.fallback,
+        renderHeight: Number(ocrConfig.renderHeight) || 3000,
+        pages: merged.ocrPages,
+        failures: ocrFailures,
+        error: ocrError,
       },
     }
     text = normalizeLatex(text)
@@ -524,6 +643,11 @@ export async function extractDocument(file, options = {}) {
     title = fallbackTitle
     extractor = 'image'
     text = ''
+  }
+  } finally {
+    if (slim !== null) {
+      try { fs.rmSync(slim.tempDir, { recursive: true, force: true }) } catch { /* 临时目录清理失败不影响结果 */ }
+    }
   }
 
   text = clampText(text, warnings)
@@ -541,4 +665,5 @@ export async function extractDocument(file, options = {}) {
   }
 }
 
+// 兼容旧导入代码（ingest.js 的图片 OCR 兜底）。
 export { runWindowsOcr }

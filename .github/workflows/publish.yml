@@ -59,10 +59,12 @@ jobs:
           PY
           test -f release/dsh-plugin-corpus/vendor/officecli/officecli.exe
           test -f release/dsh-plugin-corpus/vendor/pdftotext/pdftotext.exe
+          test -f release/dsh-plugin-corpus/vendor/rapidocr/python/python.exe
           rm -rf plugin/vendor
           cp -R release/dsh-plugin-corpus/vendor plugin/vendor
           test -f plugin/vendor/officecli/officecli.exe
           test -f plugin/vendor/pdftotext/pdftotext.exe
+          test -f plugin/vendor/rapidocr/python/python.exe
 
       - name: Publish to npm
         working-directory: plugin

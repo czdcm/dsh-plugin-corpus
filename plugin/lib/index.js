@@ -13,6 +13,7 @@ import path from 'node:path'
 import Schema from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { authorize, ACCESS_FILE, normalize } from './access.js'
+import { canAutoGrant, grantNewCollection } from './autogrant.js'
 import {
   collectionNames as engineCollections,
   collectionStatus,
@@ -50,6 +51,10 @@ export const Config = Schema.object({
   structureMaxChars: Schema.number().min(4000).max(200000).default(48000),
   maxToolOutputChars: Schema.number().min(2000).max(200000).default(24000),
   perfLogMs: Schema.number().min(0).max(60000).default(250),
+  ocrEngine: Schema.string().default('auto'),
+  ocrPython: Schema.string().default(''),
+  ocrRenderHeight: Schema.number().min(0).max(6000).default(3000),
+  ocrPageTimeoutMs: Schema.number().min(1000).max(120000).default(6000),
 })
 
 function log(ctx, level, message) {
@@ -103,6 +108,28 @@ export function apply(ctx, config) {
     const auth = authorize(dshHome, subject, collections())
     return { subject, allow: auth.allow, names: auth.allowedCollections, policy: auth.policy }
   }
+
+  /**
+   * 写权限判定（v1.6）：目标集合没有任何 grant 且尚不存在时，尝试「最小自动授权」。
+   * 集合已存在、命中显式 deny、策略文件损坏时一律不自动放行。
+   */
+  const ensureCollectionWrite = (scope, collection, tool) => {
+    if (scope.allow(collection)) return { ok: true, autoGranted: false }
+    const check = canAutoGrant({ dshHome, root, subject: scope.subject, collection })
+    if (!check.ok) return { ok: false, reason: check.reason }
+    try {
+      const granted = grantNewCollection({ dshHome, root, subject: scope.subject, collection, tool })
+      return { ok: true, autoGranted: true, ...granted }
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message : String(error) }
+    }
+  }
+  const autoGrantInfo = (autoGrant) => (autoGrant === null ? null : {
+    rule: autoGrant.rule,
+    backup: autoGrant.backup,
+    auditFile: autoGrant.auditFile,
+    auditError: autoGrant.auditError,
+  })
 
   /** 右栏权限面板用：按会话 id 解析工作区（ctx.sessions 是核心服务）。 */
   const sessionLookup = (id) => {
@@ -318,24 +345,33 @@ export function apply(ctx, config) {
 
   ctx.tools.register(defineTool({
     name: 'corpus_status',
-    description: '查看语料索引状态：正在运行的重建任务、最近任务历史，以及每个集合的文档/块/索引时间。',
+    description: '查看语料索引状态：正在运行的重建/导入任务、最近任务历史，以及每个集合的文档/块/索引时间。传 jobId 可查 corpus_reindex 或 corpus_ingest 返回的任务。',
     parameters: {
-      jobId: { type: 'string', description: '只看某个任务（来自 corpus_reindex / corpus_import 的返回）' },
+      jobId: { type: 'string', description: '只看某个任务（corpus_reindex 的 job-* 或 corpus_ingest 的 ingest-*）' },
     },
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
     async execute(args) {
       const status = jobs.status()
+      const ingestStatus = ingest.status()
       if (args && typeof args.jobId === 'string' && args.jobId !== '') {
-        const all = [...status.recent, ...(status.active ? [status.active] : [])]
-        const job = all.find((item) => item.id === args.jobId) || null
-        return reply({ ok: job !== null, job, error: job === null ? `找不到任务 ${args.jobId}` : undefined })
+        const reindexJobs = [...status.recent, ...(status.active ? [status.active] : [])]
+        const reindexJob = reindexJobs.find((item) => item.id === args.jobId)
+        if (reindexJob) return reply({ ok: true, kind: 'reindex', job: reindexJob })
+        const ingestJobs = [...(ingestStatus.active ? [ingestStatus.active] : []), ...ingestStatus.recent]
+        const ingestJob = ingestJobs.find((item) => item.id === args.jobId)
+        if (ingestJob) return reply({ ok: true, kind: 'ingest', job: ingestJob })
+        return reply({
+          ok: false,
+          job: null,
+          error: `找不到任务 ${args.jobId}（会同时查 reindex 与 ingest；也可靠空参 corpus_status 看 active / ingest.active）`,
+        })
       }
       return reply({
         ok: true,
         root,
         active: status.active,
         recent: status.recent,
-        ingest: ingest.status(),
+        ingest: ingestStatus,
         collections: collectionStatus(root),
       })
     },
@@ -357,7 +393,12 @@ export function apply(ctx, config) {
       const scope = scopeOf(exec && exec.agent)
       const collection = String((args && args.collection) || '').trim()
       if (collection === '') throw new Error('collection 不能为空')
-      if (!scope.allow(collection)) throw new Error(`没有导入到集合 ${collection} 的权限`)
+      let autoGrant = null
+      if (!scope.allow(collection)) {
+        const access = ensureCollectionWrite(scope, collection, 'corpus_import')
+        if (!access.ok) throw new Error(`没有导入到集合 ${collection} 的权限（自动授权失败：${access.reason}）`)
+        if (access.autoGranted) autoGrant = access
+      }
       const raw = String((args && args.path) || '').trim().replace(/^["']+|["']+$/g, '').trim()
       if (raw === '') throw new Error('path 不能为空')
       const source = path.isAbsolute(raw) ? raw : path.resolve(scope.subject.workspace, raw)
@@ -406,6 +447,8 @@ export function apply(ctx, config) {
         elapsedMs,
         jobId: job ? job.id : null,
         indexRunning: job !== null,
+        autoGranted: autoGrant !== null,
+        autoGrant: autoGrantInfo(autoGrant),
         hint: indexHint,
       })
     },
@@ -426,7 +469,12 @@ export function apply(ctx, config) {
       const scope = scopeOf(exec && exec.agent)
       const collection = String((args && args.collection) || '').trim()
       if (collection === '') throw new Error('collection 不能为空')
-      if (!scope.allow(collection)) throw new Error(`没有导入到集合 ${collection} 的权限`)
+      let autoGrant = null
+      if (!scope.allow(collection)) {
+        const access = ensureCollectionWrite(scope, collection, 'corpus_ingest')
+        if (!access.ok) throw new Error(`没有导入到集合 ${collection} 的权限（自动授权失败：${access.reason}）`)
+        if (access.autoGranted) autoGrant = access
+      }
       const raw = String((args && args.path) || '').trim().replace(/^["']+|["']+$/g, '').trim()
       if (raw === '') throw new Error('path 不能为空')
       const source = path.isAbsolute(raw) ? raw : path.resolve(scope.subject.workspace, raw)
@@ -447,6 +495,8 @@ export function apply(ctx, config) {
         jobId: result.job.id,
         state: result.job.state,
         job: result.job,
+        autoGranted: autoGrant !== null,
+        autoGrant: autoGrantInfo(autoGrant),
         hint: '导入在后台进行；用 corpus_status 或 Web 面板「语料库」查看进度。',
       })
     },
@@ -472,9 +522,14 @@ export function apply(ctx, config) {
       const scope = scopeOf(exec && exec.agent)
       const importDoc = args.import !== false
       const collection = String((args && args.collection) || '').trim()
+      let autoGrant = null
       if (importDoc) {
         if (collection === '') throw new Error('导入语料时 collection 不能为空')
-        if (!scope.allow(collection)) throw new Error(`没有写入集合 ${collection} 的权限`)
+        if (!scope.allow(collection)) {
+          const access = ensureCollectionWrite(scope, collection, 'corpus_structure')
+          if (!access.ok) throw new Error(`没有写入集合 ${collection} 的权限（自动授权失败：${access.reason}）`)
+          if (access.autoGranted) autoGrant = access
+        }
       }
       const rawPath = String((args && args.path) || '').trim()
       const text = typeof (args && args.text) === 'string' ? args.text : ''
@@ -515,6 +570,8 @@ export function apply(ctx, config) {
         chars: result.chars || body.length,
         body: truncated ? body.slice(0, limit) + '\n\n[工具输出已截断；完整内容用 corpus_read 读 target]' : body,
         bodyTruncated: truncated,
+        autoGranted: autoGrant !== null,
+        autoGrant: autoGrantInfo(autoGrant),
         hint: result.imported
           ? `已写入 ${result.target}；用 corpus_read 读取全文，检索会自动使用 processed/。`
           : '仅返回结构化结果，未写入语料库（import=false）。',
@@ -540,9 +597,14 @@ export function apply(ctx, config) {
       const scope = scopeOf(exec && exec.agent)
       const importDoc = args.import !== false
       const collection = String((args && args.collection) || '').trim()
+      let autoGrant = null
       if (importDoc) {
         if (collection === '') throw new Error('导入语料时 collection 不能为空')
-        if (!scope.allow(collection)) throw new Error(`没有写入集合 ${collection} 的权限`)
+        if (!scope.allow(collection)) {
+          const access = ensureCollectionWrite(scope, collection, 'corpus_summarize_session')
+          if (!access.ok) throw new Error(`没有写入集合 ${collection} 的权限（自动授权失败：${access.reason}）`)
+          if (access.autoGranted) autoGrant = access
+        }
       }
       const requestedId = String((args && args.sessionId) || '').trim()
       let session = exec && exec.agent ? exec.agent.session : null
@@ -592,6 +654,8 @@ export function apply(ctx, config) {
         chars: result.chars || body.length,
         body: truncated ? body.slice(0, limit) + '\n\n[工具输出已截断；完整内容用 corpus_read 读 target]' : body,
         bodyTruncated: truncated,
+        autoGranted: autoGrant !== null,
+        autoGrant: autoGrantInfo(autoGrant),
         hint: result.imported
           ? `已写入 ${result.target}；用 corpus_read 读取全文，检索会自动使用 processed/。`
           : '仅返回会话总结，未写入语料库（import=false）。',

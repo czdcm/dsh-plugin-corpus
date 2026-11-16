@@ -22,7 +22,7 @@ Write-Host "DSH_HOME : $DshHome"
 Write-Host "源       : $PluginSource"
 Write-Host "目标     : $Target"
 
-foreach ($item in @('lib', 'vendor', 'cordis.patch.yml', 'package.json', 'README.md')) {
+foreach ($item in @('lib', 'vendor', 'cordis.patch.yml', 'package.json', 'README.md', 'MODEL_GUIDE.md')) {
   $src = Join-Path $PluginSource $item
   if (-not (Test-Path $src)) { throw "部署包缺少 $src" }
 }
@@ -42,7 +42,7 @@ if (Test-Path $Target) {
   New-Item -ItemType Directory -Path $Target -Force | Out-Null
 }
 
-foreach ($item in @('lib', 'vendor', 'cordis.patch.yml', 'package.json', 'README.md')) {
+foreach ($item in @('lib', 'vendor', 'cordis.patch.yml', 'package.json', 'README.md', 'MODEL_GUIDE.md')) {
   $src = Join-Path $PluginSource $item
   $dst = Join-Path $Target $item
   if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }

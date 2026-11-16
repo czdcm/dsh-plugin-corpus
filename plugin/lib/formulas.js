@@ -315,9 +315,15 @@ export function normalizeLatex(input) {
 
 const FORMULA_HINT = /[∑∏∫∬∭∮√∞≤≥≠≈±×÷πΠΣΔΩαβγδεζηθικλμνξρστυφχψω]/u
 
+// Office/PPT 的对象摘要行（officecli 输出）看着像公式，其实是描述性文本：
+//   - 对象：文本框 5；连接线 14（位置 110.5pt,428.75pt 尺寸 141.75pt×0cm）
+// 这些行不能包成 $$...$$，否则摘要会变成公式块。
+const SUMMARY_LINE = /^(?:[-*+>]\s*)?(?:对象：|文本：|图形关系：|图片：|表格：|形状：|位置：|尺寸：|Slide\s*\d+|###\s*Slide)/iu
+
 function lineIsFormula(line) {
   const trimmed = String(line || '').trim()
   if (trimmed === '' || trimmed.length > 400) return false
+  if (SUMMARY_LINE.test(trimmed)) return false
   if (/^(#{1,6}\s|[-*+]\s|>\s|```|\||---$)/.test(trimmed)) return false
   if (/\$[^$]+\$/.test(trimmed)) return false
   if (!FORMULA_HINT.test(trimmed)) return false
