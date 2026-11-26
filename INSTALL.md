@@ -4,6 +4,8 @@
 
 本插件是 **DeepSeek Harness（DSH）插件**，不是独立应用：必须放入 DSH 插件目录，并在当前 DSH profile 中注册。
 
+> 升级前先备份 `%USERPROFILE%\.dsh\plugins\dsh-plugin-corpus`；覆盖后必须完全重启 DSH，刷新浏览器不会加载新宿主代码。
+
 ## 1. 压缩包里有什么
 
 ```text
