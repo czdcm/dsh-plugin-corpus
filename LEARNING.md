@@ -96,7 +96,7 @@ dsh-plugin-corpus/
 │     ├─ jobs.js            ★ 重建任务管理（worker_threads + 锁）
 │     ├─ reindex-worker.js  worker 入口：调用 engine.reindex 并通过 postMessage 报进度
 │     ├─ lock.js            跨进程锁（.corpus/index/.lock）
-│     ├─ access.js          ACL 判定：deny > grants > default；workspace/session；过期
+│     ├─ access.js          ACL 判定：deny > grants > default；workspace/session；会话链继承；过期
 │     ├─ policy.js          策略文件读写、校验、备份
 │     ├─ autogrant.js       新建集合的最小自动授权 + 审计（.corpus/audit）
 │     ├─ extract.js         19 种格式 → 文本/图片；HTML、Office、PDF、OCR 调度
