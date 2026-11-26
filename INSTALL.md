@@ -1,6 +1,6 @@
 # 安装指南
 
-本文说明如何在 Windows 上安装 `dsh-plugin-corpus-v1.6.0-plugin.zip`（完整包约 125 MB，内含 OfficeCLI、pdftotext 与 RapidOCR 运行时）。
+本文说明如何在 Windows 上安装 `dsh-plugin-corpus-v1.6.1-plugin.zip`（完整包约 125 MB，内含 OfficeCLI、pdftotext 与 RapidOCR 运行时）。
 
 本插件是 **DeepSeek Harness（DSH）插件**，不是独立应用：必须放入 DSH 插件目录，并在当前 DSH profile 中注册。
 
@@ -153,6 +153,6 @@ pnpm install
 
 | 包 | 内容 |
 |---|---|
-| `dsh-plugin-corpus-v1.6.0-plugin.zip` | 完整包：OfficeCLI + pdftotext + 许可证/源码说明 |
+| `dsh-plugin-corpus-v1.6.1-plugin.zip` | 完整包：OfficeCLI + pdftotext + 许可证/源码说明 |
 
 官方 Release 只发布完整包；`tools/package-plugin.ps1` 也只产出完整包（包含 OfficeCLI 与 pdftotext）。

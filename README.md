@@ -1,79 +1,60 @@
 # dsh-plugin-corpus
 
-面向 **DeepSeek Harness（DSH）** 的文件语料库插件。
+DeepSeek Harness（DSH）的本地语料库插件。它把本机文档放进一个可整体搬迁的目录，按集合建 SQLite 索引，向模型提供检索、按行读取和导入工具，并在 DSH 面板中提供导入、浏览、权限管理与根目录迁移。
 
-它把参考文档保存在一个可整体搬迁的语料根目录里，用 SQLite 建立索引，向模型提供检索/读取工具，支持常见文档和图片导入，并提供 Web 面板用于导入、浏览、权限管理、根目录迁移和软删除。
+当前版本 **1.6.1**。这是 DSH 插件，不是独立应用；宿主代码只在 DSH 进程启动时加载，安装或升级后必须**完全退出并重启 DSH**。
 
-当前版本：**1.6.0**。这是一个 DSH 插件，不是独立应用：安装到 DSH 插件目录并完全重启 DSH 后生效。
+## 适用环境
 
-模型操作指南（给模型看）：[`plugin/MODEL_GUIDE.md`](plugin/MODEL_GUIDE.md) —— 导入/检索/管理/删除/改集合名/权限等所有常见操作的准确流程与工具参数。
+| 项 | 要求 |
+|---|---|
+| 操作系统 | Windows 10/11 x64（PDF 渲染与 OCR 依赖 Windows 能力） |
+| 宿主 | 已安装并可用的 DeepSeek Harness |
+| 磁盘 | 完整插件解压后约 321 MB（含 OCR 运行时），语料另计 |
+| Python | 不需要；完整包已内置 RapidOCR 运行时 |
+| 开发（可选） | Node.js 24、PowerShell 5.1 |
 
-## 功能
+## 最短可用路径
 
-- **文件即语料**：每个集合是一级目录，整个语料根可复制、备份或迁移。
-- **每个集合一份 SQLite 索引**：可增量/全量重建；索引可随时从文件重新生成。
-- **13 个模型工具**：检索、读取、列表、目录卡片、章节/行号目录、重建、状态、导入、摄取、仓库/内容结构化、会话总结、删除、权限检查。
-- **批量导入**：浏览器一次选择多个文件；本机路径支持多行文件/目录，目录递归扫描；同一批全部进入同一个集合。
-- **公式保留**：HTML MathML、Word/PowerPoint 内嵌 OMML、常见 Unicode 数学符号和已有 LaTeX 统一规范成 `$...$` / `$$...$$`；PDF 的公式行也会保留并尽可能转成 LaTeX 公式块。
-- **文档导入**：Markdown、纯文本、HTML、CSV、PDF、DOCX、XLSX、PPTX 和常见图片；每次导入只写 `processed/`（供模型读）；源文件由用户自行管理。
-- **Office 高保真导入**：DOCX/XLSX/PPTX 走 officecli；PPT 额外读取对象树、分组、连接线、图表并渲染版式缩略图，Office 专用提示词要求按页解释图形逻辑，不再用「图示略」跳过；公式覆盖 OMML、Excel 公式、HTML MathML、PDF 公式行与 OCR 文本。
-- **扫描版 PDF**：Windows OCR 逐页容错，单页失败不中止整本；本机路径单文件上限 256 MiB。OCR 是异步子进程，386 页 / 24 MB 实测约 90 秒，不占宿主主线程。渲染默认按 **3000 px 目标高**（不再按 72 DPI 的 DIP 尺寸），`ocrRenderHeight` 可调。
-- **OCR 引擎：随包 RapidOCR（默认）**：完整包内置 CPython + RapidOCR（PP-OCRv4）+ ONNX Runtime + OpenCV（约 280 MB），扫描页默认走 RapidOCR，中文表格/小数比 Windows OCR 准得多；也无需用户安装 Python。`ocrEngine: auto|windows|rapidocr` 可切换，`ocrPython` 可指向外部 venv 覆盖随包运行时。页面由 Windows.Data.Pdf 渲染成 PNG 再交给 Python，不要求 PyMuPDF；失败自动回退 Windows OCR 并在 `warnings` 里说明。逐页预算默认 6 秒/页（下限 15 分钟、上限 60 分钟），超时会明确报错而不是静默降级。
-- **PDF 逐页提取**：文字层按页拆分，**只有缺文字层/乱码的页才做 OCR**，其余页保留文字层，最后按页序合并（混合型 PDF 不再整本二选一）。`.meta.json` 里记录 `pdfPages`（总页数 / 文字层页数 / OCR 页数）。
-- **PDF 质量闸门**：pdftotext 输出会检查空格、符号、控制字符和 PDF/JPEG 二进制标记；压缩流乱码不会写入语料，缺文字层的页自动转 OCR，OCR 仍不可读则明确失败。
-- **PDF 依赖随包 pdftotext**：官方完整包都包含 `vendor/pdftotext`；缺失时文字层不可提取，只能整本 OCR（Windows OCR 或 RapidOCR；两者都不可用则明确报错），不再有纯 JS 兜底。
-- **文件名跟随源文件**：processed Markdown 默认使用源文件名词干（保留中文/空格），便于按源文件管理。
-- **集合名**：支持中文、字母、数字、空格和常用符号（≤64 字符）；不能含 `/ \ : * ? " < > |`，也不能以点或空格结尾。
-- **内置小代理**：固定提示词、单轮后台调用，不污染主会话；明确要求公式输出 LaTeX。
-- **主会话接口**：把克隆的仓库或当前会话总结成语料。
-- **Web 面板**：左侧栏语料库页面（导入、检索、文件列表、集合折叠、删除、根目录设置）；检索只负责定位，查看直接用外部软件；文件列表每行提供外部打开按钮。
-- **外部查看**：每行「用外部软件打开」主按钮优先读取 Windows 默认关联（含最近选择）直接打开；没有关联时打开系统软件选择器，由 Windows 记录本次选择；点 `▾` 可再次打开系统软件选择器。文件列表的图标/名称/类型跟随处理后语料类型；按钮只显示默认应用图标，不显示文字；右侧箭头保留系统选择器。
-- **Windows 辅助能力**：内置 OCR（随包 RapidOCR，Windows OCR 兜底）；完整包随附 OfficeCLI/pdftotext；Office 在没有 officecli 时回退纯 JS，PDF 文字层依赖随包 pdftotext。
-- **资源护栏**：导入逐文件异步执行并定期让出事件循环（大目录导入不再整段卡住 DSH）；工具输出有硬上限（默认 24000 字符，可配置 `maxToolOutputChars`）；提示词目录与面板轮询带短 TTL 缓存。
-- **大 Office 自动瘦身**：源文件超过 256 MiB 时自动生成瘦身副本（跳过 `ppt/media/*.mp4`、`ppt/embeddings/oleObject*.bin`、`ppt/fonts/*.fntdata` 等与正文无关的条目），用 officecli 正常提取并在 `warnings` 里说明忽略了多少 MB；原文件不改。336 MB 课件实测 146 ms 瘦身到 58.6 MB，134 页提取完整。
-- **新建集合自动授权**：`corpus_ingest` / `corpus_import` / `corpus_structure` / `corpus_summarize_session` 遇到**尚不存在**且当前会话没有任何 grant 的集合时，自动补一条**只含该集合**的最小授权（优先 session，其次 workspace），返回 `autoGranted: true` 与规则原文；写审计到 `.corpus/audit/auto-grant.jsonl`，策略修改仍走带备份的 `savePolicy()`。集合已存在、命中显式 deny、策略文件损坏时一律不自动放行。
-- **任务查询统一**：`corpus_status(jobId)` 同时索引 reindex（`job-*`）与 ingest（`ingest-*`）任务，不再出现“找不到 ingest 任务”。
-- **公式白名单**：Office/PPT 的对象摘要行（`对象：`、`文本：`、`图形关系：`、`Slide N`）不再被误包成 `$$...$$`。
+1. 从 [GitHub Releases](https://github.com/czdcm/dsh-plugin-corpus/releases) 下载 `dsh-plugin-corpus-v1.6.1-plugin.zip`。
+2. 解压到 `%USERPROFILE%\.dsh\plugins\`，得到 `%USERPROFILE%\.dsh\plugins\dsh-plugin-corpus\`。
+3. 确认 DSH profile 已注册该插件：`dependencies` 含 `dsh-plugin-corpus`，`dsh.profile.bundles` 含 `dsh-plugin-corpus`。用插件管理器安装时会自动完成；手工解压的注册步骤见 [INSTALL.md](INSTALL.md)。
+4. 完全退出并重新启动 DSH。
+5. 打开左侧栏 **语料库**，选择文件或填写本机路径，指定集合后开始导入。
+6. 打开右侧栏 **语料权限**，给当前工作区或会话授权该集合。
+7. 在对话中让模型检索，例如「在语料库里找……」。
 
-## 环境要求
+成功信号：
 
-- Windows 10/11（OCR 依赖 Windows 能力；完整包已内置 RapidOCR 运行时，无需另装 Python）
-- 已安装并可用的 DeepSeek Harness
-- Node.js 24（或 DSH 自带 Node）
-- PowerShell 5.1（Windows 脚本和打包）
-
-插件核心是 Node.js；面板运行在 DSH Web GUI 中。
+- 左侧栏能看到新集合，文件列表出现导入项；
+- `corpus_search` 能命中新内容；
+- 会话提示词中出现可访问集合与文档卡片。
 
 ## 安装
 
-### 使用 Release 包
+### Release 包（推荐）
 
-1. 从 GitHub Releases 下载 `dsh-plugin-corpus-v<版本>-plugin.zip`。完整包已包含 OfficeCLI 和 pdftotext 及许可证。
-2. 解压到 `%USERPROFILE%\.dsh\plugins\`，得到：
-   ```
-   %USERPROFILE%\.dsh\plugins\dsh-plugin-corpus\
-   ```
-3. 确认 DSH profile 的 `dependencies` 和 `dsh.profile.bundles` 都包含 `dsh-plugin-corpus`（使用插件管理器安装时通常会自动完成）。
-4. **完全退出并重启 DSH**。只刷新浏览器页面不够，宿主半部只在进程启动时加载。
+Release 只发布完整包，包含 OfficeCLI、pdftotext 和 RapidOCR 运行时。
 
-默认语料根为 `%USERPROFILE%\.dsh\corpus`，可在面板「语料库根目录」中修改或迁移。
+1. 下载 `dsh-plugin-corpus-v<版本>-plugin.zip` 并解压到 `%USERPROFILE%\.dsh\plugins\`；
+2. 按 [INSTALL.md](INSTALL.md) 完成 profile 注册（`link:` 依赖 + `bundles`）；
+3. 完全重启 DSH。
 
-详细步骤（含 profile 注册、升级、卸载）见 [`INSTALL.md`](INSTALL.md)。
+默认语料根是 `%USERPROFILE%\.dsh\corpus`，可在面板「语料库 → 语料库根目录」修改或迁移。
 
-### 从 npm / 插件市场安装
-
-已发布到 npm，可直接安装：
+### npm / 插件市场
 
 ```powershell
 dsh plugin add dsh-plugin-corpus
 ```
 
 安装后完全重启 DSH。npm 包：<https://www.npmjs.com/package/dsh-plugin-corpus>。
-插件市场收录后，也会在 Discover 中出现；新版本需要用户在市场中确认升级。
 
-### 从源码安装
+> npm 包同样带 vendor 二进制，体积较大；首次安装可能比普通插件慢。
 
-GitHub 源码仓库不包含第三方二进制（`officecli.exe` / `pdftotext.exe`，已被 `.gitignore` 排除）。源码 clone 适合看代码和跑测试，**不是完整安装**。需要完整安装时请使用 Release 包；如果从源码开发，先把缺失文件放回 `plugin/vendor/` 再部署。
+### 源码（仅开发）
+
+GitHub 源码仓库不包含 `officecli.exe`、`pdftotext.exe` 和 `vendor/rapidocr/`（体积原因被 `.gitignore` 排除），clone 后直接部署只能得到降级能力。需要完整能力时使用 Release 包，或先把 vendor 文件放回 `plugin/vendor/`。
 
 ```powershell
 git clone https://github.com/czdcm/dsh-plugin-corpus.git
@@ -82,149 +63,164 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 # 完全重启 DSH
 ```
 
-`tools\deploy.ps1` 会把 `plugin/` 复制到 `%USERPROFILE%\.dsh\plugins\dsh-plugin-corpus`。如果 vendor 二进制缺失，脚本会给出警告：Office 只能回退纯 JS，PDF 文字层不可提取（只能整本 OCR）。
+## 使用
 
-## 快速开始
+### 面板
 
-1. 打开 DSH，点击左侧栏 **语料库**。
-2. 选择文件（可多选）或填写多行本机路径，指定一个集合；留空会自动创建 `import-日期-时间` 集合。
-3. 用 `corpus_search` / `corpus_read` 查询语料。
-4. 在右侧栏 **语料权限** 给工作区或会话授权集合。
-5. 手动改文件后，用面板或 `corpus_reindex` 重建索引。
+- **导入**：浏览器可多选文件；也可填写多行本机路径（每行一个文件或目录），目录会递归扫描。同一批导入进入同一个集合。
+- **集合**：留空集合名会自动创建 `import-日期-时间`；集合名支持中文、字母、数字和常用符号，最长 64 字符。
+- **语料文件**：按集合分组，显示类型、大小和导入时间；每行可「用外部软件打开」，删除为两次确认的软删除。
+- **检索**：只用于定位，结果给出路径和行号，不内嵌预览。
+- **根目录**：查看、复制、打开、迁移语料根。
+
+### 模型工具
+
+模型通过 13 个工具访问语料库，所有工具都受 ACL 约束：
+
+| 工具 | 用途 |
+|---|---|
+| `corpus_search` | 按关键词检索可访问集合 |
+| `corpus_read` | 按路径和行范围读取 processed 文档 |
+| `corpus_list` | 列出集合与文档 |
+| `corpus_catalog` | 返回集合/文档卡片、行数、章节摘要 |
+| `corpus_outline` | 返回章节标题与起止行号；缺失时按需生成 |
+| `corpus_reindex` | 启动增量或全量索引重建 |
+| `corpus_status` | 查看重建/导入任务与索引状态；`jobId` 同时支持 `job-*` 与 `ingest-*` |
+| `corpus_import` | 导入本机文本文件或目录 |
+| `corpus_ingest` | 后台提取文档并导入（PDF/Office/图片等） |
+| `corpus_structure` | 把仓库、目录、文件或文本总结为结构化语料 |
+| `corpus_summarize_session` | 把会话总结成语料 |
+| `corpus_delete` | 软删除单篇文档或整个集合 |
+| `corpus_access` | 解释当前工作区/会话的权限范围 |
+
+给模型的操作细则见 [plugin/MODEL_GUIDE.md](plugin/MODEL_GUIDE.md)。
+
+### 权限
+
+默认拒绝。策略文件：`%USERPROFILE%\.dsh\corpus-access.json`。
+
+- 按 `workspace` 或 `session` 授权，`paths` 支持集合名、目录前缀和 glob；
+- 显式 `deny` 优先于 `grants`，过期授权自动忽略；
+- `session` 授权沿 `parentSession` 链被子代理继承；子代理新建集合时，自动授权落在根会话；
+- 面板「语料权限 → 全局」可给指定集合开放 `workspace: "*"`。
+
+本机 ACL 文件不要提交到仓库；模板见 `config/corpus-access.example.json`。
 
 ## 数据布局
 
 ```text
 <语料根>/
 ├─ <集合>/
-│  ├─ <子目录>/         可选，可继续嵌套，形成树状目录
+│  ├─ <子目录>/              可选，可继续嵌套
 │  └─ <导入文件夹>/
-│     ├─ processed/     模型使用的 Markdown（含 LaTeX 公式）
-│     └─ .meta.json
+│     ├─ processed/          模型检索与读取的 Markdown
+│     └─ .meta.json          导入元数据（格式、来源、页数统计等）
 └─ .corpus/
-   ├─ index/<集合>.sqlite
+   ├─ index/<集合>.sqlite    每集合一份索引，可重建
    ├─ config.json
-   ├─ outlines/<hash>.json  文档结构目录（不进入检索分块）
+   ├─ outlines/<hash>.json   文档目录缓存
    ├─ import-tmp/
-   └─ trash/            软删除内容，可手动恢复
+   ├─ audit/                 自动授权审计
+   └─ trash/                 软删除内容，可手动恢复
 ```
 
-模型只检索/读取 `processed/`；插件不再保存或提供源文件。集合内部可以像文件系统一样建子目录并继续嵌套，文件列表会按目录分组显示。
+模型只读 `processed/`。插件不保存源文件；索引和大纲都可以从文件重新生成。
 
-## 工具
+## 支持格式与限额
 
-| 工具 | 用途 |
+| 项 | 说明 |
 |---|---|
-| `corpus_search` | 在可访问集合中检索 |
-| `corpus_read` | 按路径和行范围读取 processed 文档 |
-| `corpus_list` | 列出集合和文档 |
-| `corpus_catalog` | 返回集合/文档卡片、行数、章节目录摘要 |
-| `corpus_outline` | 返回章节/小节标题、起止行号、摘要；缺失目录时按需生成 |
-| `corpus_reindex` | 启动增量/全量重建 |
-| `corpus_status` | 查看重建/导入任务、索引状态、访问范围 |
-| `corpus_import` | 导入本机文件或上传文件 |
-| `corpus_ingest` | 后台提取并导入文档 |
-| `corpus_structure` | 把仓库/目录/文件/文本总结为结构化语料 |
-| `corpus_summarize_session` | 把会话总结成语料 |
-| `corpus_delete` | 软删除单篇或整个集合 |
-| `corpus_access` | 解释当前工作区/会话权限 |
+| 文本 | `.md` `.markdown` `.mdx` `.txt` `.text` `.csv` `.json` `.yaml` `.yml` |
+| 网页 | `.html` `.htm` |
+| PDF | 文字层用随包 `pdftotext`；缺文字层/乱码的页逐页 OCR，最后按页合并 |
+| Office | `.docx` `.xlsx` `.pptx`：优先 officecli，失败回退纯 JS |
+| 图片 | `.png` `.jpg` `.jpeg` `.webp` `.gif` `.bmp` `.tif` `.tiff`：视觉模型可用时结构化，否则 OCR/占位 |
+| 浏览器上传 | 单文件 25 MiB |
+| 本机路径 | 单文件 256 MiB；Office 超限自动瘦身（跳过内嵌视频/字体/oleObject） |
+| 单次导入 | `corpus_import` 默认 5000 文件；`corpus_ingest` 200 文件 |
+| 读取 | `corpus_read` 每页最多 400 行 |
+| 工具输出 | 默认 24000 字符，超出压缩并标 `_truncated` |
+| OCR | 渲染目标高 3000 px；逐页预算默认 6000 ms，总预算 15–60 分钟 |
 
-所有写操作都经过 ACL。
+### PDF 与 OCR 流程
 
-## HTTP API
-
-面板使用同源路由，前缀为 `/api/dsh-plugin-corpus/`：
-
-```text
-GET  /overview          GET  /files             POST /search
-POST /read              POST /reindex           GET  /status
-GET  /access            GET  /import/targets    POST /import
-GET  /import/status     POST /delete            GET  /gallery
-GET  /settings          POST /settings/root     POST /settings/open
-GET  /app-icon
-POST /open-external
-GET/POST /policy
-```
-
-这些接口只服务于本机 DSH 面板，不要暴露到公网。
-
-## 权限
-
-默认拒绝。授权文件位于 `%USERPROFILE%\.dsh\corpus-access.json`，可按 workspace/session 授权，路径支持集合名、前缀和 glob；显式 `deny` 优先，过期授权忽略。
-
-面板「语料权限 → 全局」支持给指定合集开放全局访问：默认动作设为「拒绝」，在「全局访问」里填合集名，点「添加全局访问」。插件会保存一条 `{"workspace":"*","paths":["合集名"]}` 的 grant，只放行这些集合，其他集合仍拒绝。默认动作是「允许」时，这条规则是冗余的。
-
-本机 ACL 文件不提交到仓库；使用 `config/corpus-access.example.json` 作为模板。
+1. `pdftotext` 提取整本文字层，按分页符拆页；
+2. 逐页过质量闸门：空页、乱码、压缩流二进制标记判为不可读；
+3. 只对不可读页做 OCR：
+   - 默认使用随包 RapidOCR（PP-OCRv4，Windows 渲染 PNG → Python 识别）；
+   - `ocrEngine: windows` 时用 Windows OCR；RapidOCR 不可用或失败时自动回退；
+4. 按页序合并，再跑整体质量闸门；仍不可读则明确报错，不写空文件；
+5. `.meta.json` 的 `pdfPages` 记录总页数/文字层页数/OCR 页数，`ocr` 记录引擎、渲染高度、失败页与错误。
 
 ## 配置
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `corpusRoot` | 空 | 覆盖语料根；空表示 `~/.dsh/corpus` |
-| `promptOrder` | `9000` | 语料提示词段顺序 |
+| `corpusRoot` | 空 | 覆盖语料根；空 = `~/.dsh/corpus` |
+| `promptOrder` | `9000` | 语料提示词段在 system prompt 中的顺序 |
 | `maxPromptFiles` | `12` | 提示词最多列出的文件标题数 |
 | `maxPromptChars` | `8000` | 提示词目录文本的最大字符数 |
 | `ingestProvider` / `ingestModel` | 空 | 内置小代理模型覆盖 |
-| `ingestVisionProvider` / `ingestVisionModel` | 空 | 图片识别使用的视觉模型；留空跟随默认模型 |
+| `ingestVisionProvider` / `ingestVisionModel` | 空 | 图片识别视觉模型；留空跟随默认模型 |
 | `ingestMaxChars` | `24000` | 单次摄取材料上限 |
 | `ingestTimeoutMs` | `120000` | 摄取模型超时 |
 | `structureMaxChars` | `48000` | 仓库/会话结构化材料上限 |
-| `ocrEngine` | `auto` | `auto` / `windows` / `rapidocr`；`auto` 优先用随包 RapidOCR，缺失时用 Windows OCR |
-| `ocrPython` | 空 | 覆盖随包 RapidOCR 的 `python.exe` 绝对路径；留空 = 使用随包运行时（`vendor/rapidocr/`） |
-| `ocrRenderHeight` | `3000` | OCR 渲染目标像素高（0 = 按 PDF DIP 尺寸） |
-| `ocrPageTimeoutMs` | `6000` | 逐页 OCR 预算（毫秒）；总预算 = 页数 × 该值，下限 15 分钟、上限 60 分钟 |
+| `maxToolOutputChars` | `24000` | 工具返回值硬上限 |
+| `ocrEngine` | `auto` | `auto` / `windows` / `rapidocr` |
+| `ocrPython` | 空 | 覆盖随包 RapidOCR 的 `python.exe` 路径 |
+| `ocrRenderHeight` | `3000` | OCR 渲染目标像素高（0 = 按 PDF DIP） |
+| `ocrPageTimeoutMs` | `6000` | 逐页 OCR 预算（毫秒） |
 
-语料根也可从面板修改，选择会写入 `~/.dsh/corpus-root.json`，并支持迁移已有数据。
+语料根选择写入 `~/.dsh/corpus-root.json`，面板迁移会同步已有数据。
+
+## 故障排查
+
+| 现象 | 检查 | 处理 |
+|---|---|---|
+| 面板或工具看不到集合 | `corpus_access` 的 `collections` | 在右栏「语料权限」给当前工作区/会话加 grant |
+| 导入报「没有导入到集合 X 的权限」 | 集合是否已存在、是否有显式 deny | 已存在集合需人工授权；新集合会自动授权并返回 `autoGranted` |
+| 导入报「文件超过上限」 | 文件大小与格式 | 非 Office 文件需先拆分；Office 超 256 MiB 会自动瘦身 |
+| PDF 导入报「没有可读文字层」 | 是否扫描件/加密件 | 确认 OCR 可用；加密件先解密 |
+| OCR 很慢或超时 | 页数、`ocrPageTimeoutMs` | 调大逐页预算；或拆分 PDF 后分批导入 |
+| 导入/重建报「已有任务在运行」 | `corpus_status` 的 `active` / `ingest.active` | 等任务结束，不要重复启动 |
+| 搜不到刚导入的内容 | 集合索引是否为空、`indexedAt` | `corpus_reindex` 后重试；确认文件在 `corpus_list` 中 |
+| 升级后行为没变 | DSH 是否完全重启 | 宿主半部只在进程启动时加载，刷新浏览器无效 |
 
 ## 安全
 
-- 面板是本地管理界面，没有公网认证层；只监听本机。
-- 路径解析限制在语料根内。
-- 删除是软删除，进入 `.corpus/trash/` 可手动恢复。
-- 本机 ACL 文件不要提交或分享。
+- 面板是本机管理界面，没有公网认证层，不要反向代理到公网。
+- 路径解析限制在语料根内；`corpus_read` 只读语料文件。
+- 删除是软删除，内容进入 `.corpus/trash/`。
+- ACL 文件包含本机路径，不要提交或分享。
 
-## 开发
+## 开发与发布
 
 ```powershell
 # 全部本地验收
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\test-all.ps1
 
-# 部署到本机插件目录并重启 DSH
+# 部署到本机插件目录
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 
-# 打完整插件包（默认写入项目 releases/v<版本>/）
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1
-
-# 打完整插件包（唯一的发布形态：包含 OfficeCLI 与 pdftotext）
+# 打完整插件包（含 OfficeCLI、pdftotext、RapidOCR 运行时）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1
 ```
 
-测试优先使用 `DSH_NODE`；未设置时自动查找 DSH 自带 Node 或 PATH 中的 `node`。真实语料回归测试默认跳过，设置 `CORPUS_TEST_ROOT`、`CORPUS_TEST_IT`、`CORPUS_TEST_DSH` 后运行；公式 PDF 回归可设置 `CORPUS_TEST_FORMULA_PDF`。
+测试优先使用 `DSH_NODE`；未设置时自动查找 DSH 自带 Node 或 PATH 中的 `node`。真实语料回归默认跳过，设置 `CORPUS_TEST_ROOT`、`CORPUS_TEST_IT`、`CORPUS_TEST_DSH` 后运行；公式 PDF 回归可设置 `CORPUS_TEST_FORMULA_PDF`。
 
-## 仓库结构
-
-```text
-plugin/          DSH 插件：宿主 lib/、客户端 bundle、vendor/、详细 README
-tests/           自包含 Node .mjs 测试
-tools/           部署/测试/打包 PowerShell 脚本
-config/          示例配置；本机 ACL 文件已忽略
-LEARNING.md      架构和阅读指南
-CHANGELOG.md     对外版本说明
-THIRD_PARTY_NOTICES.md
-LICENSE
-```
+发布流程：更新版本 → 全部测试 → 打包 → 提交并打 tag → 发布 GitHub Release（资产为 zip、`RELEASE.md`、`SHA256SUMS`）。Release 发布后 GitHub Actions 会自动发布 npm。
 
 ## 文档
 
-- [`plugin/README.md`](plugin/README.md) — 详细使用与开发说明
-- [`INSTALL.md`](INSTALL.md) — 安装、升级、卸载
-- [`LEARNING.md`](LEARNING.md) — 架构、调用链、阅读顺序
-- [`CHANGELOG.md`](CHANGELOG.md) — 版本变化
-- [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) — 第三方组件与许可证
-- [`LICENSE`](LICENSE) — GPL-2.0-or-later
+- [plugin/README.md](plugin/README.md) — 详细使用与开发说明（含 HTTP API）
+- [plugin/MODEL_GUIDE.md](plugin/MODEL_GUIDE.md) — 给模型看的操作指南
+- [INSTALL.md](INSTALL.md) — 安装、升级、卸载
+- [LEARNING.md](LEARNING.md) — 架构、调用链与阅读顺序
+- [CHANGELOG.md](CHANGELOG.md) — 版本变化
+- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) — 第三方组件与许可证
 
 ## 许可证
 
-本项目源码采用 **GPL-2.0-or-later**。
+项目源码采用 **GPL-2.0-or-later**。
 
-OfficeCLI 为 Apache-2.0；Poppler/pdftotext 为 GPL-2.0-or-later。官方 Release 只发布包含两者的完整包，并附许可证和源码说明；`package-plugin.ps1` 也只产出完整包。详见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+随包组件：OfficeCLI（Apache-2.0）、Poppler `pdftotext`（GPL-2.0-or-later）、RapidOCR 运行时（CPython、ONNX Runtime、OpenCV、NumPy 等，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)）。官方 Release 只发布完整包，并附许可证与源码说明。

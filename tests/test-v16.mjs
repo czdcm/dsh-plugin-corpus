@@ -141,6 +141,34 @@ try {
     ok('自动授权：仅 session + 集合、deny/已存在/损坏不放行、可审计')
   }
 
+  // 6. 子代理会话继承父会话的 session grant（parentSession 链）。
+  {
+    const dshHome = tempDir('home-chain')
+    const root = tempDir('root-chain')
+    const parent = 'session-parent'
+    const child = 'session-child'
+    const grandchild = 'session-grandchild'
+    fs.writeFileSync(path.join(dshHome, 'corpus-access.json'), JSON.stringify({
+      version: 1,
+      default: 'deny',
+      grants: [{ session: parent, paths: ['继承集合'] }],
+      deny: [],
+    }))
+    const workspace = 'C:\\Work\\Project'
+    const parentSubject = { workspace, session: parent, sessions: [parent] }
+    const childSubject = { workspace, session: child, sessions: [child, parent] }
+    const grandchildSubject = { workspace, session: grandchild, sessions: [grandchild, child, parent] }
+    const stranger = { workspace, session: 'session-other', sessions: ['session-other'] }
+    assert.equal(authorize(dshHome, parentSubject, ['继承集合']).allow('继承集合'), true, '父会话应有权限')
+    assert.equal(authorize(dshHome, childSubject, ['继承集合']).allow('继承集合'), true, '子代理应继承父会话权限')
+    assert.equal(authorize(dshHome, grandchildSubject, ['继承集合']).allow('继承集合'), true, '孙会话应继承整条链')
+    assert.equal(authorize(dshHome, stranger, ['继承集合']).allow('继承集合'), false, '无关会话不应继承')
+    const granted = grantNewCollection({ dshHome, root, subject: childSubject, collection: '子代理新建', tool: 'corpus_ingest' })
+    assert.equal(granted.rule.session, parent, '子代理新建集合时授权应落在根会话')
+    assert.equal(authorize(dshHome, childSubject, ['子代理新建']).allow('子代理新建'), true, '子代理可通过链使用新授权')
+    ok('子代理继承父会话权限（parentSession 链；自动授权落在根会话）')
+  }
+
   console.log('')
   console.log('v1.6 验收通过（ZIP/瘦身/公式白名单/OCR/自动授权）。')
 } finally {

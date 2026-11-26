@@ -74,13 +74,42 @@ function dshHomeOf(ctx) {
   return path.join(os.homedir(), '.dsh')
 }
 
-/** 会话主体：工作区 + 会话 id。 */
-function subjectOf(agent) {
+/** 读取一个会话的父会话 id（子代理会话的 header.parentSession）。 */
+function parentSessionOf(ctx, sessionId) {
+  try {
+    const sessions = typeof ctx.get === 'function' ? ctx.get('sessions') : undefined
+    const session = sessions && typeof sessions.get === 'function' ? sessions.get(sessionId) : null
+    const parent = session && session.header && session.header.parentSession
+    return typeof parent === 'string' ? parent : ''
+  } catch {
+    return ''
+  }
+}
+
+/** 会话链：当前会话 + 祖先（子代理 → 父会话 → …），用于继承语料权限。 */
+function sessionChainOf(ctx, session) {
+  const header = (session && session.header) || {}
+  const chain = []
+  const seen = new Set()
+  let cursor = String((session && (session.id || header.id)) || '')
+  let next = typeof header.parentSession === 'string' ? header.parentSession : ''
+  while (cursor !== '' && !seen.has(cursor)) {
+    chain.push(cursor)
+    seen.add(cursor)
+    const parent = next !== '' ? next : parentSessionOf(ctx, cursor)
+    next = ''
+    cursor = parent || ''
+  }
+  return chain
+}
+
+/** 会话主体：工作区 + 会话 id + 会话链（子代理继承主会话的语料权限）。 */
+function subjectOf(ctx, agent) {
   const session = agent && agent.session
   const header = session && session.header
   const workspace = (header && header.cwd) || process.cwd()
-  const id = (session && (session.id || (header && header.id))) || ''
-  return { workspace, session: String(id || '') }
+  const chain = sessionChainOf(ctx, session)
+  return { workspace, session: chain[0] || '', sessions: chain }
 }
 
 export function apply(ctx, config) {
@@ -104,7 +133,7 @@ export function apply(ctx, config) {
 
   const collections = () => engineCollections(root)
   const scopeOf = (agent) => {
-    const subject = subjectOf(agent)
+    const subject = subjectOf(ctx, agent)
     const auth = authorize(dshHome, subject, collections())
     return { subject, allow: auth.allow, names: auth.allowedCollections, policy: auth.policy }
   }
@@ -143,6 +172,7 @@ export function apply(ctx, config) {
       return {
         id: String(session.id || id),
         workspace: typeof header.cwd === 'string' ? header.cwd : '',
+        sessions: sessionChainOf(ctx, session),
       }
     } catch {
       return null

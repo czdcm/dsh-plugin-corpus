@@ -63,10 +63,14 @@ export function grantNewCollection({ dshHome, root, subject, collection, tool })
   if (!Array.isArray(base.deny)) base.deny = []
   if (!base.default) base.default = 'deny'
 
-  const session = subject && typeof subject.session === 'string' ? subject.session.trim() : ''
+  const chain = subject && Array.isArray(subject.sessions) && subject.sessions.length > 0
+    ? subject.sessions
+    : [subject && subject.session]
+  const rootSession = String(chain[chain.length - 1] || '').trim()
   const workspace = subject && typeof subject.workspace === 'string' ? subject.workspace : ''
-  const rule = session !== ''
-    ? { session, paths: [name] }
+  // 子代理发起时授权给根会话：根会话与整条会话链都能访问，最小且可继承。
+  const rule = rootSession !== ''
+    ? { session: rootSession, paths: [name] }
     : { workspace: workspace.replace(/\\/g, '/').replace(/\/+$/, ''), paths: [name] }
 
   base.grants.push(rule)
@@ -81,7 +85,8 @@ export function grantNewCollection({ dshHome, root, subject, collection, tool })
     fs.appendFileSync(auditFile, JSON.stringify({
       at: new Date().toISOString(),
       tool: String(tool || ''),
-      session,
+      session: rootSession,
+      sessionChain: chain.map((item) => String(item)),
       workspace,
       collection: name,
       rule,

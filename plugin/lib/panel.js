@@ -365,7 +365,11 @@ export function createPanelRoutes({ root, dshHome, jobs, sessionLookup, ingest }
         ? looked.workspace
         : fallbackWorkspace
       const names = collectionNames(root)
-      const auth = authorize(dshHome, { workspace, session: sessionId }, names)
+      const auth = authorize(dshHome, {
+        workspace,
+        session: sessionId,
+        sessions: looked && Array.isArray(looked.sessions) ? looked.sessions : [],
+      }, names)
       sendJson(res, 200, {
         ok: true,
         sessionId: looked && looked.id ? looked.id : sessionId,

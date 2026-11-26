@@ -77,11 +77,27 @@ function subjectsOf(rule) {
   return { session, workspace }
 }
 
+function sessionsOf(subject) {
+  const raw = subject && Array.isArray(subject.sessions) && subject.sessions.length > 0
+    ? subject.sessions
+    : [subject && subject.session]
+  const out = []
+  for (const item of raw) {
+    const id = String(item === undefined || item === null ? '' : item).trim()
+    if (id !== '' && !out.includes(id)) out.push(id)
+  }
+  return out
+}
+
+/**
+ * 会话规则是否命中主体。
+ * 主体可带 `sessions`（当前会话 + 祖先会话链）：子代理的 session 规则会继承主会话的授权。
+ */
 function ruleApplies(rule, subject) {
   if (!rule || typeof rule !== 'object') return false
   if (ruleExpired(rule)) return false
   const { session, workspace } = subjectsOf(rule)
-  if (session !== null && session !== subject.session) return false
+  if (session !== null && !sessionsOf(subject).includes(session)) return false
   if (workspace !== null && workspace !== '*' && workspace !== subject.workspace) return false
   // 既没 workspace 也没 session 的规则是全局规则（典型用法：全局 deny 某类路径）
   if (session === null && workspace === null) return true
@@ -126,6 +142,7 @@ export function ruleAppliesTo(rule, subject) {
   const target = {
     workspace: normalize(subject && subject.workspace),
     session: (subject && subject.session) || '',
+    sessions: sessionsOf(subject),
   }
   return ruleApplies(rule, target)
 }
@@ -160,7 +177,12 @@ export function policyAllowsTarget(policy, subject, relPath) {
  */
 export function authorize(dshHome, subject, collectionNames = []) {
   const policy = loadAccess(dshHome)
-  const target = { workspace: normalize(subject.workspace), session: subject.session || '' }
+  const target = {
+    workspace: normalize(subject.workspace),
+    session: subject.session || '',
+    // 子代理会话继承父会话：把当前会话 + 祖先链一起参与 session 规则匹配。
+    sessions: sessionsOf(subject),
+  }
   const grants = policy && Array.isArray(policy.grants) ? policy.grants : []
   const denies = policy && Array.isArray(policy.deny) ? policy.deny : []
   const fallbackAllow = policy === null // 没策略文件：允许本工作区自己的 corpus/

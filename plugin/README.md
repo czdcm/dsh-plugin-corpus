@@ -9,7 +9,7 @@ dsh-plugin-corpus 是 **DeepSeek Harness (DSH)** 的文件语料库插件。
 - **模型只读 `processed/`**：插件不再保存源文件；
 - **一切访问先过 ACL**：按工作区/会话/路径授权，默认拒绝。
 
-当前版本：**1.6.0**。
+当前版本：**1.6.1**。
 
 模型操作指南（给模型看）：[`MODEL_GUIDE.md`](MODEL_GUIDE.md)。
 
@@ -187,6 +187,7 @@ OfficeCLI 是 Apache-2.0；Poppler `pdftotext` 是 GPL-2.0-or-later，详见仓�
 - 显式 `deny` 优先于 `grants`；
 - 过期的 grant 自动忽略；
 - 集合名、路径前缀、glob 都可以作为 `paths`；
+- `session` 授权会沿 `parentSession` 链被子代理会话继承（主会话 → 子代理 → 孙代理）；子代理新建集合时，自动授权落在根会话；
 - 工具调用、提示词列表、面板 `/access` 使用同一套判断。
 
 右栏「语料权限 → 全局」的「全局访问」用于默认拒绝时给指定合集放行：填写合集名后点击添加，保存为 `workspace: "*"` 的 grant，对所有工作区/会话生效；其他合集仍按默认拒绝。

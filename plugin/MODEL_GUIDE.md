@@ -1,7 +1,7 @@
 # dsh-plugin-corpus 模型操作指南（MODEL_GUIDE）
 
 > 读者：DSH 中的模型（也适合用户查阅）。
-> 适用版本：**1.6.0+**（PDF 逐页提取、随包 RapidOCR、大 Office 自动瘦身、新建集合自动授权）。
+> 适用版本：**1.6.1+**（PDF 逐页提取、随包 RapidOCR、大 Office 自动瘦身、新建集合自动授权）。
 > 目标：用户提出“导入 / 查找 / 整理 / 删除 / 重建 / 改合集”等语料库操作时，模型能选对工具、填对参数、按正确顺序执行并验证结果。
 
 ---
@@ -37,7 +37,7 @@
 
 - **集合**：`<root>/<集合名>/`。集合名规则：1–64 字符，以中文/字母/数字开头，不能含 `/ \ : * ? " < > |`，不能以点或空格结尾，不能用 Windows 保留名（CON/PRN/AUX/NUL/COM1…）。
 - **文档**：集合内的文本文件（`.md` 为主，也支持 `.txt/.json/.yaml` 等）。模型只能通过 `corpus_read` 读，且只读 `processed/` 或集合内文件；不能读 `.corpus/`、`originals/`、符号链接。
-- **权限**：`corpus-access.json`，默认 **拒绝**；按工作区/会话 + 集合/路径（支持 glob）授权，`deny` 优先。模型**只能查看**，不能修改。
+- **权限**：`corpus-access.json`，默认 **拒绝**；按工作区/会话 + 集合/路径（支持 glob）授权，`deny` 优先。`session` 授权会沿 `parentSession` 链被子代理继承（主会话 → 子代理 → 孙代理）。模型**只能查看**，不能修改。
 - **任务**：索引重建（reindex）与文档摄取（ingest）都是后台任务；**同一时刻各只跑一个**。
 
 ---
@@ -284,7 +284,7 @@
   - 当前会话 / 当前工作区加 grant（可设有效期）；
   - 「全局访问」用 `workspace: "*"` 让某集合对所有工作区开放；
   - 默认动作 allow/deny 的切换也在面板。
-- **唯一例外（v1.6）**：`corpus_ingest` / `corpus_import` / `corpus_structure` / `corpus_summarize_session` 写一个**尚不存在**的集合时，插件会自动补一条最小授权（只含该集合；优先 session，其次 workspace），并写审计 `.corpus/audit/auto-grant.jsonl`。这不是模型手改文件：模型只调用工具，授权由插件完成，返回 `autoGranted: true`。
+- **唯一例外（v1.6）**：`corpus_ingest` / `corpus_import` / `corpus_structure` / `corpus_summarize_session` 写一个**尚不存在**的集合时，插件会自动补一条最小授权（只含该集合；优先**根会话** session，其次 workspace；子代理发起时授权落在主会话），并写审计 `.corpus/audit/auto-grant.jsonl`。这不是模型手改文件：模型只调用工具，授权由插件完成，返回 `autoGranted: true`。
 - 自动授权的拒绝条件：集合已存在、命中显式 deny、策略文件损坏。遇到这些情况提示用户去面板处理。
 - 权限不足的典型报错：`没有访问集合 X 的权限` / `没有导入到集合 X 的权限（自动授权失败：…）`。
 
