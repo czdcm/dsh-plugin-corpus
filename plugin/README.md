@@ -15,6 +15,19 @@ dsh-plugin-corpus 是 **DeepSeek Harness (DSH)** 的文件语料库插件。
 
 ---
 
+## 0. 目录结构
+
+| 路径 | 内容 |
+|---|---|
+| `lib/index.js` | 插件入口：13 个工具、提示词上下文、面板路由、ACL |
+| `lib/client.js` | 左侧语料库页与右侧权限面板的前端代码 |
+| `lib/extract.js` | 文档提取调度：文本 / HTML / Office / PDF / OCR |
+| `lib/pdf.js` | PDF 文字层、逐页质量闸门、Windows OCR 与 RapidOCR |
+| `lib/office.js` | Office ZIP + XML 的纯 JS 回退解析 |
+| `lib/engine.js`、`jobs.js` | 索引、检索与后台重建 |
+| `lib/access.js`、`policy.js`、`autogrant.js` | ACL 判定、策略读写与新建集合自动授权 |
+| `vendor/` | OfficeCLI、pdftotext、RapidOCR 运行时（只在 Release 包中） |
+
 ## 1. 安装与启用
 
 ### 从 Release 安装
