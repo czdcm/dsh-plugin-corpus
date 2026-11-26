@@ -1,3 +1,5 @@
+# 发布流程：GitHub Release 发布后触发；也可在 Actions 里手动指定已有 tag。
+# 步骤：从 Release 资产解出 vendor，校验 officecli / pdftotext / rapidocr，再 npm publish。
 name: Publish npm package
 
 on:
