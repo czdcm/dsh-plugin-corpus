@@ -30,30 +30,6 @@ DeepSeek Harness（DSH）的本地语料库插件。它把本机文档放进一�
 - `corpus_search` 能命中新内容；
 - 会话提示词中出现可访问集合与文档卡片。
 
-## 仓库文件说明
-
-GitHub 文件列表只显示名字，下表说明根目录每一项的用途，以及什么时候需要打开它。
-
-| 路径 | 是什么 | 什么时候看 |
-|---|---|---|
-| `plugin/` | 插件本体：`lib/` 宿主代码与面板客户端、`vendor/` 随包二进制、插件 README | 安装、开发、排查运行时行为 |
-| `plugin/lib/index.js` | 注册 13 个模型工具、提示词上下文与面板路由的入口 | 改工具或权限逻辑 |
-| `plugin/lib/client.js` | 左侧语料库页与右侧权限面板的前端代码 | 改面板交互 |
-| `plugin/lib/extract.js` | 文档提取调度：文本/HTML/Office/PDF/OCR | 改格式支持或 OCR 流程 |
-| `plugin/lib/pdf.js` | PDF 文字层、逐页质量闸门、Windows OCR 与 RapidOCR 调度 | 排查 PDF 导入 |
-| `plugin/vendor/` | OfficeCLI、pdftotext、RapidOCR 运行时（不进 git，只在 Release 包中） | 打包或部署完整能力 |
-| `tests/` | 自包含的 Node `.mjs` 验收测试 | 提交前跑全量测试 |
-| `tools/` | `deploy.ps1`（部署）、`test-all.ps1`（验收）、`package-plugin.ps1`（打包） | 部署、测试、发版 |
-| `config/` | `corpus-access.example.json` 权限策略模板 | 手工配置 ACL |
-| `.github/workflows/` | Release 发布后自动校验 vendor 并发布 npm | 改 CI 或发布流程 |
-| `.gitignore` | 排除 vendor 大文件、本机 ACL、临时目录 | 调整仓库内容 |
-| `README.md` | 本文件：用途、安装、使用、故障排查 | 第一次使用 |
-| `INSTALL.md` | 安装、profile 注册、升级、卸载的详细步骤 | 安装或升级 |
-| `LEARNING.md` | 架构、调用链、阅读顺序 | 接手开发 |
-| `CHANGELOG.md` | 对外版本变化 | 升级前确认改动 |
-| `THIRD_PARTY_NOTICES.md` | 第三方组件、许可证与再分发义务 | 分发或合规检查 |
-| `LICENSE` | GPL-2.0-or-later 全文 | 许可证确认 |
-
 ## 安装
 
 ### Release 包（推荐）
