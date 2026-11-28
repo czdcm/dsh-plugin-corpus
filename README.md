@@ -132,7 +132,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 |---|---|
 | 文本 | `.md` `.markdown` `.mdx` `.txt` `.text` `.csv` `.json` `.yaml` `.yml` |
 | 网页 | `.html` `.htm` |
-| PDF | 文字层用随包 PDFium（pypdfium2）；缺文字层/乱码的页再逐页 OCR |
+| PDF | 文字层用随包 PDFium（pypdfium2，字符坐标保守补空格）；缺文字层/乱码的页再逐页 OCR |
 | Office | `.docx` `.xlsx` `.pptx`：优先 officecli，失败回退纯 JS |
 | 图片 | `.png` `.jpg` `.jpeg` `.webp` `.gif` `.bmp` `.tif` `.tiff`：视觉模型可用时结构化，否则 OCR/占位 |
 | 浏览器上传 | 单文件 25 MiB |
