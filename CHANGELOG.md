@@ -4,7 +4,7 @@
 
 ## 1.7.0 — 2026-11-28
 
-### PDF 文字层改用随包 PDFium
+### PDF 文字层改用随包 PDFium（1.7.0）
 
 - 移除 pdftotext（GPL-2.0-or-later）与可选 PyMuPDF（AGPL-3.0），改用 **pypdfium2（Apache-2.0）+ PDFium（BSD-3-Clause）**；随 `vendor/rapidocr/site-packages` 分发，用户不需要安装 Python 包。
 - 新增 `plugin/lib/pdf_pdfium.py`：按页输出 JSON；支持 CJK CMap（Adobe-GB1 等）与空密码加密 PDF；`lib/pdf.js` 新增 `runPdfiumText()`；`extractor` 改为 `pdfium`。
