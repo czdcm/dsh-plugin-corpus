@@ -14,5 +14,5 @@ config/corpus-access.json
 plugin/officecli-tmp-*
 .npm-pack.json
 
-# 随包 RapidOCR 运行时（Python + site-packages，约 280 MB）：只进 Release zip，不入 git
+# 随包 Python 运行时（RapidOCR + PDFium，约 280 MB）：只进 Release zip，不入 git
 plugin/vendor/rapidocr/
