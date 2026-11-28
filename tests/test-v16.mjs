@@ -1,5 +1,5 @@
 /**
- * v1.6/v1.7 验收：ZIP 重写/Office 瘦身、公式白名单、OCR 引擎与预算、PDFium 文字层、新建集合自动授权。
+ * v1.6/v1.7 验收：ZIP 重写/Office 瘦身、公式白名单、OCR 引擎与预算、PDFium 文字层与布局后处理、新建集合自动授权。
  * 运行：node tests/test-v16.mjs（不依赖网络与真实语料；随包 vendor 缺失时跳过 RapidOCR 断言）
  */
 import assert from 'node:assert/strict'
