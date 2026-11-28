@@ -2,7 +2,7 @@
 
 本文件说明 `dsh-plugin-corpus` 仓库和发布包中使用的第三方组件。本文不是法律意见，公开再分发前请自行确认最新许可证文本与义务。
 
-## 1. 本项目源码
+## 1. 本项目源码（1.7.0 起 MIT）
 
 - 许可证：**MIT**，全文见 [`LICENSE`](LICENSE)。
 - 版权：Copyright (c) 2026 dsh-plugin-corpus contributors。
