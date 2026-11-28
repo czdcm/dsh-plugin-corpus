@@ -244,6 +244,10 @@ export function createIngestManager({ root, dshHome, reindex, agent, config, log
               renderHeight: config && config.ocrRenderHeight,
               pageTimeoutMs: config && config.ocrPageTimeoutMs,
             },
+            pdf: {
+              // 默认用随包 PDFium（vendor/rapidocr）；pdfPython 只用于覆盖成外部 Python。
+              python: config && config.pdfPython,
+            },
           })
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)

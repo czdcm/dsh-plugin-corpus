@@ -1,6 +1,6 @@
 # 安装指南
 
-本文说明如何在 Windows 上安装 `dsh-plugin-corpus-v1.6.1-plugin.zip`（完整包约 125 MB，内含 OfficeCLI、pdftotext 与 RapidOCR 运行时）。
+本文说明如何在 Windows 上安装 `dsh-plugin-corpus-v<版本>-plugin.zip`（完整包约 127 MB，内含 OfficeCLI、PDFium（pypdfium2）与 RapidOCR 运行时）。
 
 本插件是 **DeepSeek Harness（DSH）插件**，不是独立应用：必须放入 DSH 插件目录，并在当前 DSH profile 中注册。
 
@@ -17,10 +17,10 @@ dsh-plugin-corpus/
 ├─ LICENSE
 ├─ THIRD_PARTY_NOTICES.md
 ├─ lib/                 宿主工具、面板 API、客户端 UI
-└─ vendor/              OfficeCLI、pdftotext 及其许可证
+└─ vendor/              OfficeCLI、PDFium（pypdfium2）、RapidOCR 运行时及其许可证
 ```
 
-vendor 二进制已经包含在完整包里，不需要单独安装 OfficeCLI 或 pdftotext。
+vendor 组件已经包含在完整包里，不需要单独安装 OfficeCLI 或 pypdfium2。
 
 ## 2. 环境要求
 
@@ -33,7 +33,7 @@ vendor 二进制已经包含在完整包里，不需要单独安装 OfficeCLI �
 
 ### 源码 clone 不等于完整安装
 
-GitHub 源码仓库不包含第三方二进制（`officecli.exe` / `pdftotext.exe`）。`git clone` 适合看代码和跑测试，但默认没有完整 Office/PDF 提取能力。完整安装请使用 Release 包；源码开发前先把 vendor 文件放回 `plugin/vendor/officecli/`、`plugin/vendor/pdftotext/` 和 `plugin/vendor/rapidocr/`，否则 Office 只能回退纯 JS，PDF 文字层不可提取、只能整本 OCR（Windows OCR 或 RapidOCR；都不可用则无法导入 PDF）。
+GitHub 源码仓库不包含第三方二进制（`officecli.exe` 与 `vendor/rapidocr/`）。`git clone` 适合看代码和跑测试，但默认没有完整 Office/PDF 提取能力。完整安装请使用 Release 包；源码开发前先把 vendor 文件放回 `plugin/vendor/officecli/` 和 `plugin/vendor/rapidocr/`，否则 Office 只能回退纯 JS，PDF 文字层不可提取、只能整本 OCR（Windows OCR 或 RapidOCR；都不可用则无法导入 PDF）。
 
 ## 3. 从 npm / 插件市场安装
 
@@ -155,6 +155,6 @@ pnpm install
 
 | 包 | 内容 |
 |---|---|
-| `dsh-plugin-corpus-v1.6.1-plugin.zip` | 完整包：OfficeCLI + pdftotext + 许可证/源码说明 |
+| `dsh-plugin-corpus-v<版本>-plugin.zip` | 完整包：OfficeCLI + PDFium（pypdfium2）+ RapidOCR 运行时 + 许可证/源码说明 |
 
-官方 Release 只发布完整包；`tools/package-plugin.ps1` 也只产出完整包（包含 OfficeCLI 与 pdftotext）。
+官方 Release 只发布完整包；`tools/package-plugin.ps1` 也只产出完整包（包含 OfficeCLI 与 PDFium）。

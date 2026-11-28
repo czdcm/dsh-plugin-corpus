@@ -1,7 +1,7 @@
 ﻿# 打包可直接安装的 DSH 插件。
-# 只产出完整包：包含 OfficeCLI（Apache-2.0）、pdftotext（GPL-2.0-or-later）、
+# 只产出完整包：包含 OfficeCLI（Apache-2.0）、PDFium（pypdfium2，Apache-2.0 + BSD-3-Clause）、
 # 随包 RapidOCR 运行时（CPython + ONNX Runtime + OpenCV 等）及其许可证/源码说明。
-# v1.5.0 起移除了纯 JS PDF 解析兜底，PDF 文字层依赖随包 pdftotext，因此不再提供 -WithoutPdftotext 构建。
+# v1.7.0 起移除 pdftotext，PDF 文字层改用随包 pypdfium2。
 # 产物结构：dsh-plugin-corpus/{package.json,cordis.patch.yml,LICENSE,THIRD_PARTY_NOTICES.md,MODEL_GUIDE.md,lib/,vendor/,README.md}
 # 默认输出到项目根目录的 releases/v<版本>/（项目根 = repo/ 的上一级）。
 # 用法：powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1 [-Out <zip>]
@@ -45,27 +45,27 @@ try {
     $count = $zip.Entries.Count
     $hasPackage = $false
     $hasOffice = $false
-    $hasPdfText = $false
+    $hasPdfium = $false
     $hasRapid = $false
     $hasLicense = $false
     foreach ($entry in $zip.Entries) {
       $name = $entry.FullName -replace '\\', '/'
       if ($name -eq 'dsh-plugin-corpus/package.json') { $hasPackage = $true }
       if ($name -eq 'dsh-plugin-corpus/vendor/officecli/officecli.exe') { $hasOffice = $true }
-      if ($name -match '^dsh-plugin-corpus/vendor/pdftotext/.*\.(exe|dll)$') { $hasPdfText = $true }
+      if ($name -eq 'dsh-plugin-corpus/vendor/rapidocr/site-packages/pypdfium2/__init__.py') { $hasPdfium = $true }
       if ($name -eq 'dsh-plugin-corpus/vendor/rapidocr/python/python.exe') { $hasRapid = $true }
       if ($name -eq 'dsh-plugin-corpus/LICENSE') { $hasLicense = $true }
     }
     if (-not $hasPackage) { throw 'zip 缺少 dsh-plugin-corpus/package.json' }
     if (-not $hasLicense) { throw 'zip 缺少 LICENSE' }
     if (-not $hasOffice) { throw 'zip 缺少 OfficeCLI（Apache-2.0）' }
-    if (-not $hasPdfText) { throw 'zip 缺少 pdftotext 二进制（v1.5.0 起 PDF 文字层依赖它）' }
+    if (-not $hasPdfium) { throw 'zip 缺少 pypdfium2（v1.7.0 起 PDF 文字层依赖它）' }
     if (-not $hasRapid) { throw 'zip 缺少随包 RapidOCR 运行时（vendor/rapidocr/）' }
   } finally {
     $zip.Dispose()
   }
   $size = (Get-Item $Out).Length
-  $mode = 'full（含 pdftotext + RapidOCR 运行时，附许可证/源码说明）'
+  $mode = 'full（含 PDFium + RapidOCR 运行时，附许可证/源码说明）'
   Write-Host ("已生成 {0}（{1:N1} MB，{2} 个条目，版本 {3}，{4}）" -f $Out, ($size / 1MB), $count, $version, $mode)
   Write-Host '结构：dsh-plugin-corpus/package.json + cordis.patch.yml + LICENSE + THIRD_PARTY_NOTICES.md + MODEL_GUIDE.md + INSTALL.md + lib/ + vendor/ + README.md'
 } finally {

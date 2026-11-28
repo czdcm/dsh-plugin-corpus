@@ -1,41 +1,17 @@
 #!/usr/bin/env python3
-"""dsh-plugin-corpus — RapidOCR 辅助脚本（可选 OCR 引擎）。
+"""dsh-plugin-corpus — RapidOCR 辅助脚本（随包 OCR 引擎）。
 
-两种输入：
-  --manifest <json>   由插件用 Windows.Data.Pdf 渲染好的页面清单：
-                      [{"page": 40, "path": "C:/.../page-0040.png"}, ...]
-  --path <pdf>        插件没有渲染清单时，尝试用 PyMuPDF 直接渲染（需装 pymupdf）
+输入只有一种：由插件用 Windows.Data.Pdf 渲染好的页面清单 JSON：
+  [{"page": 40, "path": "C:/.../page-0040.png"}, ...]
 
 输出与 ocr_windows.ps1 一致：`--- Page N ---` 分段 + 纯文本行，供 parseOcrPages() 解析。
 
-依赖：rapidocr_onnxruntime、opencv-python、numpy（manifest 模式不需要 pymupdf）。
+依赖：rapidocr_onnxruntime、opencv-python、numpy（全部在 vendor/rapidocr）。
 """
 
 import argparse
 import json
-import os
 import sys
-import tempfile
-
-
-def parse_pages(spec):
-    """解析 1-based 页码范围："1,3-5,9"；空字符串表示全部页。"""
-    if not spec:
-        return None
-    selected = set()
-    for token in str(spec).split(","):
-        token = token.strip()
-        if not token:
-            continue
-        if "-" in token:
-            first_text, last_text = token.split("-", 1)
-            first, last = int(first_text), int(last_text)
-            if first > last:
-                first, last = last, first
-            selected.update(range(first, last + 1))
-        else:
-            selected.add(int(token))
-    return selected or None
 
 
 def ocr_image(engine, cv2, np, image_path):
@@ -77,40 +53,10 @@ def collect_from_manifest(path):
     return out
 
 
-def collect_from_pdf(pdf_path, pages_spec, render_height):
-    import fitz  # PyMuPDF
-
-    document = fitz.open(pdf_path)
-    selected = parse_pages(pages_spec)
-    out = []
-    try:
-        cache_dir = tempfile.mkdtemp(prefix="corpus-rapidocr-")
-        for index in range(document.page_count):
-            number = index + 1
-            if selected is not None and number not in selected:
-                continue
-            page = document.load_page(index)
-            rect = page.rect
-            zoom = max(200, int(render_height or 3000)) / max(1.0, float(rect.height))
-            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
-            target = os.path.join(cache_dir, f"page-{number:04d}.png")
-            pix.save(target)
-            out.append((number, target))
-    finally:
-        document.close()
-    return out
-
-
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--manifest", default="")
-    parser.add_argument("--path", default="")
-    parser.add_argument("--pages", default="")
-    parser.add_argument("--render-height", type=int, default=3000)
+    parser.add_argument("--manifest", required=True)
     args = parser.parse_args()
-    if not args.manifest and not args.path:
-        print("需要 --manifest 或 --path", file=sys.stderr)
-        return 2
 
     try:
         import numpy as np
@@ -121,10 +67,7 @@ def main():
         return 1
 
     try:
-        if args.manifest:
-            items = collect_from_manifest(args.manifest)
-        else:
-            items = collect_from_pdf(args.path, args.pages, args.render_height)
+        items = collect_from_manifest(args.manifest)
     except Exception as exc:  # noqa: BLE001
         print(f"准备页面失败：{exc}", file=sys.stderr)
         return 1

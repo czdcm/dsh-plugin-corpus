@@ -4,9 +4,9 @@
 
 ## 1. 本项目源码
 
-- 许可证：**GNU General Public License, version 2 or later（GPL-2.0-or-later）**，全文见 [`LICENSE`](LICENSE)。
+- 许可证：**MIT**，全文见 [`LICENSE`](LICENSE)。
 - 版权：Copyright (c) 2026 dsh-plugin-corpus contributors。
-- 本项目自己的 `plugin/lib/*.js`、`tests/*`、`tools/*` 和文档均按 GPL-2.0-or-later 发布，除非另有说明。
+- 本项目自己的 `plugin/lib/*.js`、`tests/*`、`tools/*` 和文档均按 MIT 发布，除非另有说明。
 
 ## 2. 运行时与前端依赖（不随仓库打包）
 
@@ -26,17 +26,17 @@
 - 仅用于把 Office 文档读成文本，不修改文档。
 - 默认插件包包含该二进制及 Apache-2.0 许可证/NOTICE。
 
-### 3.2 Poppler `pdftotext`（`plugin/vendor/pdftotext/`）
+### 3.2 PDFium / pypdfium2（`plugin/vendor/rapidocr/site-packages/pypdfium2*`）
 
-- **许可证：GNU GPL version 2 or later**，全文见 `plugin/vendor/pdftotext/LICENSE`，说明见 `plugin/vendor/pdftotext/NOTICE.txt`。
-- 上游：https://poppler.freedesktop.org/
-- 再分发该二进制需要满足 GPL 要求（许可证文本、对应源码可获取、NOTICE 等）。完整包包含它，并附 `SOURCE-OFFER.txt`。
-- 不含它时，PDF 文字层不可提取（只能整本 OCR；没有 OCR 引擎则明确失败）；官方完整包始终包含它。
+- **PDFium：BSD-3-Clause**，上游 https://pdfium.googlesource.com/pdfium/ 。
+- **pypdfium2：Apache-2.0**，上游 https://github.com/pypdfium2-team/pypdfium2 。
+- 二进制为 `pypdfium2_raw/pdfium.dll`；许可证文本随 `pypdfium2-5.15.2.dist-info/licenses/`（含 PDFium 与依赖的许可证）。
+- 用于 PDF 文字层提取；随完整包分发，不需要用户安装 Python 包。
+- 缺少它时 PDF 文字层不可提取（只能整本 OCR；没有 OCR 引擎则明确失败）。
 
 ### 3.3 系统能力
 
 - **Windows OCR**：通过 PowerShell 5.1 调用 `Windows.Media.Ocr`、`Windows.Data.Pdf` 等系统 API，不再分发微软二进制。
-- **MinGW 运行时 DLL**：与 `pdftotext.exe` 一起随 Poppler 包分发，受其运行时例外和 GPL 义务约束。
 - **测试夹具和 Markdown 文档**：由本项目创建，不包含第三方语料。
 
 ### 3.4 随包 RapidOCR 运行时（`plugin/vendor/rapidocr/`）
@@ -61,22 +61,23 @@
 
 各组件自带的 `*.dist-info/`（含许可证文本）随 site-packages 一并保留。若不需要内置 OCR，可自行删除 `plugin/vendor/rapidocr/`，插件会回退到 Windows OCR（需系统 OCR 语言包）。
 
+随包运行时按上游原样分发，未修改源码；对应源码可从上述上游项目获取。
+
 ## 4. 发布包策略
 
 | 产物 | 内容 | 第三方二进制 |
 |---|---|---|
-| 默认 `*-plugin.zip` | 插件代码 + 完整 vendor + 许可证/说明 | OfficeCLI（Apache-2.0）+ pdftotext（GPL-2.0-or-later）+ RapidOCR 运行时（CPython/ONNX Runtime/OpenCV/NumPy 等） |
-| `*-handoff.zip`（如果本地生成） | 完整开发交接包 | 本地 vendor；公开再分发前必须满足 GPL 义务 |
+| 默认 `*-plugin.zip` | 插件代码 + 完整 vendor + 许可证/说明 | OfficeCLI（Apache-2.0）+ PDFium（BSD-3-Clause）/ pypdfium2（Apache-2.0）+ RapidOCR 运行时（CPython/ONNX Runtime/OpenCV/NumPy 等） |
+| `*-handoff.zip`（如果本地生成） | 完整开发交接包 | 本地 vendor；公开再分发前必须满足相应许可证义务 |
 
-官方 Release 只发布完整包；`tools/package-plugin.ps1` 也只产出完整包（v1.5.0 起移除了纯 JS PDF 解析兜底，PDF 文字层依赖随包 pdftotext）。
-
-如果发布包含 `pdftotext` 的构建，请保留许可证、NOTICE、源码获取说明；默认构建已经随包附带。Poppler 源码可从上游获取，`SOURCE-OFFER.txt` 中也有说明。
+官方 Release 只发布完整包；`tools/package-plugin.ps1` 也只产出完整包（v1.7.0 起 PDF 文字层依赖随包 pypdfium2）。
 
 ## 5. 链接
 
 - Apache License 2.0：https://www.apache.org/licenses/LICENSE-2.0
-- GNU GPL 2.0：https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
-- Poppler：https://poppler.freedesktop.org/
+- MIT：https://opensource.org/license/mit
+- PDFium：https://pdfium.googlesource.com/pdfium/
+- pypdfium2：https://github.com/pypdfium2-team/pypdfium2
 - OfficeCLI：https://github.com/officecli/officecli
 - RapidOCR：https://github.com/RapidAI/RapidOCR
 - ONNX Runtime：https://github.com/microsoft/onnxruntime

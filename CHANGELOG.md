@@ -2,6 +2,21 @@
 
 本文件记录 `dsh-plugin-corpus` 的对外版本变化。
 
+## 1.7.0 — 2026-11-28
+
+### PDF 文字层改用随包 PDFium
+
+- 移除 pdftotext（GPL-2.0-or-later）与可选 PyMuPDF（AGPL-3.0），改用 **pypdfium2（Apache-2.0）+ PDFium（BSD-3-Clause）**；随 `vendor/rapidocr/site-packages` 分发，用户不需要安装 Python 包。
+- 新增 `plugin/lib/pdf_pdfium.py`：按页输出 JSON；支持 CJK CMap（Adobe-GB1 等）与空密码加密 PDF；`lib/pdf.js` 新增 `runPdfiumText()`；`extractor` 改为 `pdfium`。
+- 删除 `pdfTextEngine`（不再有 pdftotext/pymupdf 选择）与 `pdf_pymupdf.py`；`pdfPython` 仅用于覆盖 PDFium 的 Python 解释器，留空即用随包 `vendor/rapidocr/`。
+- 移除 `vendor/pdftotext/`、相关 GPL 文案与打包校验；`tools/package-plugin.ps1` 改为校验 `pypdfium2` 存在。
+- 实测：ANSYS 214 页 0.43 s（纯提取）/约 1.20 s（含字符坐标后处理）；754 页 1.39 s（纯提取）；3000 px 渲染约 137 ms/页。
+- 文字层增加基于字符坐标的保守后处理：仅当两个 ASCII 字母之间 `gap > 0.46 × 行高` 时补空格；CJK 占比超过 15% 的页跳过，避免把“km/h”“120”拆开；分页边界始终保留。
+- 已知差异：PDFium 空白更少（214 页 489,593 字符 vs pdftotext 577,105），但按页分隔后 token 覆盖基本一致（原始 70,427 vs 70,415；后处理后 70,441，多出的是补回的少量空格）；拼接文本时必须保留分页边界，否则跨页词会粘连。
+- 新增测试：PDFium 路径不存在时不可用；随包运行时能提取 CJK 并记录 `pdfText.engine=pdfium`，且不向 CJK/数字之间插空格。
+- 项目源码许可证从 GPL-2.0-or-later 改为 **MIT**；历史版本仍按发布时的许可证。随包第三方组件保留各自许可证（PDFium BSD-3-Clause、pypdfium2/OfficeCLI/RapidOCR 等 Apache/MIT/BSD）。
+- 1.6.2 的 PyMuPDF 方案未发布，1.7.0 直接替换为 PDFium。
+
 ## 1.6.1 — 2026-11-26
 
 ### 子代理继承主会话的语料权限

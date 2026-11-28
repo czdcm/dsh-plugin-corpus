@@ -2,7 +2,7 @@
  * dsh-plugin-corpus v1.3 — 文档提取层验收测试（新）。
  *
  * 自包含：只在 os.tmpdir() 下造合成文件，跑完（含失败）清理；
- * 不依赖本机安装的 Python / officecli / pdftotext —— 测试内用 Node 内置 zlib
+ * 不依赖本机安装的 Python / officecli / 外部 PDF 工具 —— 测试内用 Node 内置 zlib
  * 手工构造最小 OOXML ZIP（docx/xlsx/pptx）与带文字层的合法 PDF（含 Font/Resources）。
  *
  * 覆盖：
@@ -12,7 +12,7 @@
  *   · extract.js   —— 文本/CSV/HTML（标题、实体解码、script/style/noscript/注释剔除）、
  *                     图片返回 kind:'image' + mediaType、maxBytes/不存在/目录/扩展名拒绝、
  *                     空文本 warning、extractorAvailability 与 SUPPORTED_EXTENSIONS；
- *   · pdf.js       —— 质量闸门 / OCR 空格合并；随包 vendor/pdftotext 可用时验证文字层提取
+ *   · pdf.js       —— 质量闸门 / OCR 空格合并；随包 PDFium 可用时验证文字层提取
  *                     （v1.4.3 起 PDF 不再有纯 JS 解析兜底）。
  *
  * 运行（DSH 自带 Node 24）：
@@ -97,7 +97,7 @@ function makeZip(entries) {
 }
 
 // ---------------------------------------------------------------------------
-// 最小文字层 PDF 写入器（合法 xref；/Contents 未压缩，pdftotext 与纯 JS 都能读）
+// 最小文字层 PDF 写入器（合法 xref；/Contents 未压缩，PDFium 可直接读）
 // ---------------------------------------------------------------------------
 function buildTextPdf() {
   const content = Buffer.from(
@@ -323,7 +323,7 @@ try {
   ok('图片：png/jpg/jpeg/webp/gif/bmp/tif/tiff 返回 kind:image 与 mediaType（不要求 OCR）')
 
   // -------------------------------------------------------------------------
-  // 5. PDF：随包 pdftotext + OCR（v1.4.3 起不再有纯 JS 兜底）
+  // 5. PDF：随包 PDFium + OCR（v1.7 起不再有 pdftotext）
   // -------------------------------------------------------------------------
   const pdfFile = write('text-layer.pdf', buildTextPdf())
   assert(!isUsablePdfText('\f\f\f\f\f\f\f\f\f\f'), '只有换页符的 PDF 输出应判为不可读')
@@ -364,10 +364,10 @@ try {
   assert(pdfDoc.title === 'Corpus PDF Test', 'PDF 标题回退首行，实际 ' + JSON.stringify(pdfDoc.title))
   const pdfAvail = pdfExtractorAvailability()
   if (pdfAvail.bundled) {
-    assert(pdfDoc.meta.extractor === 'bundled-pdftotext', '有随包 pdftotext 时应优先用它，实际 ' + pdfDoc.meta.extractor)
-    ok('PDF：随包 vendor/pdftotext 直接提取文字层（不再有纯 JS 兜底）')
+    assert(pdfDoc.meta.extractor === 'pdfium', '有随包 PDFium 时应优先用它，实际 ' + pdfDoc.meta.extractor)
+    ok('PDF：随包 PDFium 直接提取文字层（不再有纯 JS 兜底）')
   } else {
-    skipTest('PDF：随包 pdftotext', '缺少 vendor/pdftotext；v1.4.3 起 PDF 提取依赖随包 pdftotext（官方完整包包含）')
+    skipTest('PDF：随包 PDFium', '缺少 vendor/rapidocr 的 PDFium 运行时；v1.7 起 PDF 文字层依赖随包 pypdfium2')
   }
 
   // 可选 OCR 冒烟：默认跳过（PowerShell + Windows OCR 要几秒，且识别结果依赖引擎）
@@ -389,7 +389,7 @@ try {
   // -------------------------------------------------------------------------
   const availability = extractorAvailability()
   assert(Object.keys(availability).sort().join(',') === 'bundle,html,image,ocr,office,officecli,pdf', 'extractorAvailability 字段应为 {pdf,office,officecli,html,bundle,ocr,image}，实际 ' + Object.keys(availability).join(','))
-  assert(availability.pdf === availability.bundle && availability.office === true && availability.html === true && availability.image === true, 'PDF 依赖随包 pdftotext；office/html/image 应始终可用')
+  assert(availability.pdf === availability.bundle && availability.office === true && availability.html === true && availability.image === true, 'PDF 依赖随包 PDFium；office/html/image 应始终可用')
   assert(typeof availability.bundle === 'boolean' && typeof availability.ocr === 'boolean' && typeof availability.officecli === 'boolean', 'bundle/ocr/officecli 应是布尔值')
   assert(availability.officecli === (bundledOfficecli() !== null), 'officecli 可用性应与 bundledOfficecli() 一致')
   ok('extractorAvailability：{pdf,office,officecli,html,bundle,ocr,image} 形状 + bundledOfficecli() 一致')

@@ -2,7 +2,7 @@
 
 DeepSeek Harness（DSH）的本地语料库插件。它把本机文档放进一个可整体搬迁的目录，按集合建 SQLite 索引，向模型提供检索、按行读取和导入工具，并在 DSH 面板中提供导入、浏览、权限管理与根目录迁移。
 
-当前版本 **1.6.1**。这是 DSH 插件，不是独立应用；宿主代码只在 DSH 进程启动时加载，安装或升级后必须**完全退出并重启 DSH**。
+当前版本 **1.7.0**。这是 DSH 插件，不是独立应用；宿主代码只在 DSH 进程启动时加载，安装或升级后必须**完全退出并重启 DSH**。
 
 ## 适用环境
 
@@ -11,12 +11,12 @@ DeepSeek Harness（DSH）的本地语料库插件。它把本机文档放进一�
 | 操作系统 | Windows 10/11 x64（PDF 渲染与 OCR 依赖 Windows 能力） |
 | 宿主 | 已安装并可用的 DeepSeek Harness |
 | 磁盘 | 完整插件解压后约 321 MB（含 OCR 运行时），语料另计 |
-| Python | 不需要；完整包已内置 RapidOCR 运行时 |
+| Python | 不需要；随包运行时已包含 PDFium（pypdfium2）与 RapidOCR |
 | 开发（可选） | Node.js 24、PowerShell 5.1 |
 
 ## 最短可用路径
 
-1. 从 [GitHub Releases](https://github.com/czdcm/dsh-plugin-corpus/releases) 下载 `dsh-plugin-corpus-v1.6.1-plugin.zip`。
+1. 从 [GitHub Releases](https://github.com/czdcm/dsh-plugin-corpus/releases) 下载最新完整包 `dsh-plugin-corpus-v<版本>-plugin.zip`。
 2. 解压到 `%USERPROFILE%\.dsh\plugins\`，得到 `%USERPROFILE%\.dsh\plugins\dsh-plugin-corpus\`。
 3. 确认 DSH profile 已注册该插件：`dependencies` 含 `dsh-plugin-corpus`，`dsh.profile.bundles` 含 `dsh-plugin-corpus`。用插件管理器安装时会自动完成；手工解压的注册步骤见 [INSTALL.md](INSTALL.md)。
 4. 完全退出并重新启动 DSH。
@@ -34,7 +34,7 @@ DeepSeek Harness（DSH）的本地语料库插件。它把本机文档放进一�
 
 ### Release 包（推荐）
 
-Release 只发布完整包，包含 OfficeCLI、pdftotext 和 RapidOCR 运行时。
+Release 只发布完整包，包含 OfficeCLI、PDFium（pypdfium2）和 RapidOCR 运行时。
 
 1. 下载 `dsh-plugin-corpus-v<版本>-plugin.zip` 并解压到 `%USERPROFILE%\.dsh\plugins\`；
 2. 按 [INSTALL.md](INSTALL.md) 完成 profile 注册（`link:` 依赖 + `bundles`）；
@@ -54,7 +54,7 @@ dsh plugin add dsh-plugin-corpus
 
 ### 源码（仅开发）
 
-GitHub 源码仓库不包含 `officecli.exe`、`pdftotext.exe` 和 `vendor/rapidocr/`（体积原因被 `.gitignore` 排除），clone 后直接部署只能得到降级能力。需要完整能力时使用 Release 包，或先把 vendor 文件放回 `plugin/vendor/`。
+GitHub 源码仓库不包含 `officecli.exe` 和 `vendor/rapidocr/`（体积原因被 `.gitignore` 排除），clone 后直接部署只能得到降级能力。需要完整能力时使用 Release 包，或先把 vendor 文件放回 `plugin/vendor/`。
 
 ```powershell
 git clone https://github.com/czdcm/dsh-plugin-corpus.git
@@ -132,7 +132,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 |---|---|
 | 文本 | `.md` `.markdown` `.mdx` `.txt` `.text` `.csv` `.json` `.yaml` `.yml` |
 | 网页 | `.html` `.htm` |
-| PDF | 文字层用随包 `pdftotext`；缺文字层/乱码的页逐页 OCR，最后按页合并 |
+| PDF | 文字层用随包 PDFium（pypdfium2）；缺文字层/乱码的页再逐页 OCR |
 | Office | `.docx` `.xlsx` `.pptx`：优先 officecli，失败回退纯 JS |
 | 图片 | `.png` `.jpg` `.jpeg` `.webp` `.gif` `.bmp` `.tif` `.tiff`：视觉模型可用时结构化，否则 OCR/占位 |
 | 浏览器上传 | 单文件 25 MiB |
@@ -144,13 +144,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 
 ### PDF 与 OCR 流程
 
-1. `pdftotext` 提取整本文字层，按分页符拆页；
+1. PDFium 按页提取文字层，并用字符坐标保守补空格（仅 ASCII 字母间，CJK 页跳过）；
 2. 逐页过质量闸门：空页、乱码、压缩流二进制标记判为不可读；
-3. 只对不可读页做 OCR：
+3. 不可读的页做 OCR：
    - 默认使用随包 RapidOCR（PP-OCRv4，Windows 渲染 PNG → Python 识别）；
    - `ocrEngine: windows` 时用 Windows OCR；RapidOCR 不可用或失败时自动回退；
 4. 按页序合并，再跑整体质量闸门；仍不可读则明确报错，不写空文件；
-5. `.meta.json` 的 `pdfPages` 记录总页数/文字层页数/OCR 页数，`ocr` 记录引擎、渲染高度、失败页与错误。
+5. `.meta.json` 的 `pdfPages` 记录总页数/文字层页数/OCR 页数，`pdfText` 记录文字层引擎，`ocr` 记录 OCR 引擎、渲染高度、失败页与错误。
 
 ## 配置
 
@@ -170,6 +170,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 | `ocrPython` | 空 | 覆盖随包 RapidOCR 的 `python.exe` 路径 |
 | `ocrRenderHeight` | `3000` | OCR 渲染目标像素高（0 = 按 PDF DIP） |
 | `ocrPageTimeoutMs` | `6000` | 逐页 OCR 预算（毫秒） |
+
+| `pdfPython` | 空 | 覆盖 PDFium 使用的 `python.exe`；空 = 使用随包运行时（`vendor/rapidocr/`） |
 
 语料根选择写入 `~/.dsh/corpus-root.json`，面板迁移会同步已有数据。
 
@@ -202,7 +204,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\test-all.ps1
 # 部署到本机插件目录
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 
-# 打完整插件包（含 OfficeCLI、pdftotext、RapidOCR 运行时）
+# 打完整插件包（含 OfficeCLI、PDFium、RapidOCR 运行时）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1
 ```
 
@@ -221,6 +223,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1
 
 ## 许可证
 
-项目源码采用 **GPL-2.0-or-later**。
+项目源码采用 **MIT**。
 
-随包组件：OfficeCLI（Apache-2.0）、Poppler `pdftotext`（GPL-2.0-or-later）、RapidOCR 运行时（CPython、ONNX Runtime、OpenCV、NumPy 等，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)）。官方 Release 只发布完整包，并附许可证与源码说明。
+随包组件：OfficeCLI（Apache-2.0）、PDFium（BSD-3-Clause）/ pypdfium2（Apache-2.0）、RapidOCR 运行时（CPython、ONNX Runtime、OpenCV、NumPy 等，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)）。官方 Release 只发布完整包，并附许可证与源码说明。

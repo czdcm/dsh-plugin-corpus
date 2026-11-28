@@ -67,7 +67,7 @@
 | **Schemastery** | 插件配置 schema（默认值/范围） | `export const Config` |
 | **SQLite（node:sqlite）** | 每集合一份索引，WAL | `DatabaseSync` |
 | **Windows PowerShell 5.1 + WinRT** | PDF 渲染/OCR | `ocr_windows.ps1` |
-| **Poppler pdftotext** | 文字版 PDF 直接提取 | `vendor/pdftotext/` |
+| **PDFium（pypdfium2）** | 文字版 PDF 按页提取 | `vendor/rapidocr/site-packages/pypdfium2*` |
 | **OfficeCLI** | Office 文档文本提取（优先），失败回退纯 JS | `vendor/officecli/` |
 | **纯 JS ZIP+XML** | docx/xlsx/pptx 兜底解析 | `zip.js` + `office.js` |
 | **Git / PowerShell** | 版本管理、部署、测试、打包 | `tools/*.ps1` |
@@ -102,7 +102,7 @@ dsh-plugin-corpus/
 │     ├─ extract.js         19 种格式 → 文本/图片；HTML、Office、PDF、OCR 调度
 │     ├─ zip.js             纯 JS ZIP 读取 + 重写（deflate；大 Office 瘦身）
 │     ├─ office.js          纯 JS docx/xlsx/pptx XML 解析兜底
-│     ├─ pdf.js             随包 pdftotext + 逐页质量闸门 + OCR 引擎调度（Windows/RapidOCR）
+│     ├─ pdf.js             随包 PDFium + 逐页质量闸门 + OCR 引擎调度（Windows/RapidOCR）
 │     ├─ ingest.js          导入任务：路径/上传、per-import 布局、AI 回退、重建
 │     ├─ ingest-agent.js    内置小代理：固定 system prompt 的单轮 LLM 调用（文本/图片）
 │     ├─ structure.js       主会话接口：仓库/目录/文件/文本 → 结构化 processed
@@ -117,7 +117,7 @@ dsh-plugin-corpus/
 ├─ README.md                安装、使用与工具/API 总览
 ├─ CHANGELOG.md             对外版本说明
 ├─ THIRD_PARTY_NOTICES.md   第三方许可证
-├─ LICENSE                  GPL-2.0 全文
+├─ LICENSE                  MIT 全文
 └─ LEARNING.md              本文件
 ```
 

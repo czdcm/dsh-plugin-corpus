@@ -1,14 +1,12 @@
 /**
- * dsh-plugin-corpus — PDF 文本提取 + 内置 OCR 兜底（v1.4.3）。
+ * dsh-plugin-corpus — PDF 文本提取 + 内置 OCR 兜底（v1.7）。
  *
- * 发布版一律随包携带 pdftotext（vendor/pdftotext），因此不再保留纯 JS 的
- * PDF 文字层解析兜底：
- *   · 文字版 PDF：用随包 pdftotext 抽文字（异步子进程，不占主线程）；
+ * PDF 文字层由随包 PDFium（pypdfium2，Apache-2.0 + BSD-3-Clause）提取：
+ *   · 文字版 PDF：调用随包 Python + pdf_pdfium.py 按页取文字（子进程，不占主线程）；
  *   · 扫描版/无文字层：调用插件内置 ocr_windows.ps1
- *     （Windows.Data.Pdf 渲染 + Windows.Media.Ocr），同样是子进程。
+ *     （Windows.Data.Pdf 渲染 + Windows.Media.Ocr），或随包 RapidOCR。
  *
- * 为什么移除纯 JS 解析：它会把扫描件里的 DCT/JPX 图片流也当文本解码，
- * 24 MB 的扫描书实测占满宿主主线程十几分钟（CHANGELOG 1.4.3 有完整记录）。
+ * 不再随包 pdftotext（GPL），也不依赖外部 PyMuPDF（AGPL）。
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -19,7 +17,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 /**
  * 判断 PDF 文字层是否像可读正文。
- * pdftotext 在扫描件上会输出空文本/换页符；坏 PDF 可能输出压缩流乱码。
+ * PDFium 在扫描件上可能返回空文本；坏 PDF 可能输出压缩流乱码。
  * 这类结果必须在 OCR 兜底前丢弃，不能写进 processed。
  */
 export function pdfTextQuality(value) {
@@ -87,7 +85,7 @@ export function normalizeOcrText(value) {
     .replace(/(?<=[，。；：、！？（）《》【】])[ \t]+(?=[\u4e00-\u9fff])/gu, '')
 }
 
-/** 按 pdftotext 的分页符（\f）拆页。pdftotext 每页末尾都会输出 \f，所以只去掉末尾那一个空段，
+/** 按 \f 分页符拆页（兼容旧的 \f 输出与测试；PDFium 直接按页返回）。只去掉末尾那一个空段，
  *  末尾真正的空白页（扫描页）会以空段的形式保留下来，交给逐页 OCR 补齐。 */
 export function splitPdfPages(text) {
   const raw = String(text || '')
@@ -125,7 +123,7 @@ export function needsOcrPage(pageText) {
 
 /**
  * 合并文字层分页与 OCR 分页：每页优先用可读的文字层，缺文字/乱码的页用 OCR。
- * @param {string[]} textPages pdftotext 分页文本（可能为空数组）。
+ * @param {string[]} textPages 文字层分页文本（可能为空数组）。
  * @param {Map<number,string>} ocrPages OCR 结果（1-based 页码 → 文本）。
  * @param {number} pageCount 总页数。
  * @returns {{pages: string[], textPages: number, ocrPages: number, weakPages: number, emptyPages: number}}
@@ -203,41 +201,87 @@ export function ocrAvailable() {
   return process.platform === 'win32' && findPowerShell() !== null && fs.existsSync(ocrScriptPath())
 }
 
-/** 插件随包携带的 pdftotext（Windows x64）。搬走插件后仍可用。 */
-export function bundledPdftotext() {
-  if (process.platform !== 'win32') return null
-  const candidate = path.join(HERE, '..', 'vendor', 'pdftotext', 'pdftotext.exe')
-  try { return fs.statSync(candidate).isFile() ? candidate : null } catch { return null }
+/** 随包 PDFium Python（优先 config.pdfPython，否则 vendor/rapidocr/python）。 */
+export function pdfiumPython(options = {}) {
+  const configured = String(options.python || '').trim()
+  if (configured !== '') return configured
+  return bundledRapidOcrPython()
 }
 
-/** 用随包 pdftotext 提取文字（异步，不阻塞事件循环）。 */
-export function runBundledPdftotext(file, timeoutMs = 120000) {
-  return new Promise((resolve, reject) => {
-    const executable = bundledPdftotext()
-    if (executable === null) {
-      reject(new Error('插件内没有随包 pdftotext（官方完整包应包含）'))
-      return
+export function pdfiumScriptPath() {
+  return path.join(HERE, 'pdf_pdfium.py')
+}
+
+/** 是否可用 PDFium：python + 脚本 + 随包 site-packages 里的 pypdfium2。 */
+export function pdfiumAvailable(options = {}) {
+  const configured = String(options.python || '').trim()
+  const python = pdfiumPython(options)
+  if (!python) return false
+  try {
+    if (!fs.statSync(python).isFile()) return false
+  } catch {
+    return false
+  }
+  if (!fs.existsSync(pdfiumScriptPath())) return false
+  if (configured === '') {
+    const sitePackages = bundledRapidOcrSitePackages()
+    if (sitePackages === null) return false
+    try {
+      if (!fs.statSync(path.join(sitePackages, 'pypdfium2')).isDirectory()) return false
+    } catch {
+      return false
     }
-    execFile(executable, ['-layout', '-enc', 'UTF-8', file, '-'], {
-      encoding: 'utf8',
-      maxBuffer: 128 * 1024 * 1024,
-      timeout: timeoutMs,
-      windowsHide: true,
-    }, (error, stdout, stderr) => {
-      if (error) {
-        reject(new Error(`pdftotext 失败：${String(stderr || error.message).trim()}`))
-        return
-      }
-      resolve(String(stdout || ''))
-    })
+  }
+  return true
+}
+
+/**
+ * 调 PDFium（pypdfium2）提取文字层。
+ * @param {string} file PDF 路径。
+ * @param {string} pages 1-based 页码范围（"1-3,7"）；空表示全部页。
+ * @param {{python?: string, timeoutMs?: number}} options
+ * @returns {Promise<{pageCount: number, pages: Array<{page:number,text:string,chars:number,error?:string}>}>}
+ */
+export async function runPdfiumText(file, pages, options = {}) {
+  const configured = String(options.python || '').trim()
+  const python = pdfiumPython(options)
+  if (!python) throw new Error('没有可用的 PDFium Python（vendor/rapidocr 缺失）')
+  const script = pdfiumScriptPath()
+  if (!fs.existsSync(script)) throw new Error('缺少内置 pdf_pdfium.py')
+  const env = { ...process.env }
+  if (configured === '') {
+    // 随包解释器不会自动找 vendor/site-packages；用 PYTHONPATH 指过去。
+    const sitePackages = bundledRapidOcrSitePackages()
+    if (sitePackages !== null) {
+      env.PYTHONPATH = env.PYTHONPATH ? `${sitePackages};${env.PYTHONPATH}` : sitePackages
+    }
+  }
+  const args = [script, '--path', file]
+  const spec = typeof pages === 'string' ? pages.trim() : ''
+  if (spec !== '') args.push('--pages', spec)
+  const stdout = await execFileAsync(python, args, {
+    encoding: 'utf8',
+    maxBuffer: 256 * 1024 * 1024,
+    timeout: Math.max(10000, Number(options.timeoutMs) || 180000),
+    windowsHide: true,
+    env,
   })
+  let parsed
+  try {
+    parsed = JSON.parse(stdout)
+  } catch {
+    throw new Error('PDFium 输出不是合法 JSON')
+  }
+  if (!parsed || !Array.isArray(parsed.pages)) throw new Error('PDFium 输出缺少 pages')
+  return parsed
 }
 
 export function pdfExtractorAvailability() {
-  const bundled = bundledPdftotext() !== null
+  const pdfium = pdfiumAvailable()
   return {
-    text: bundled,
-    bundled,
+    text: pdfium,
+    pdfium,
+    bundled: pdfium,
     ocr: ocrAvailable(),
   }
 }
@@ -290,8 +334,8 @@ export function runWindowsOcr(file, mode = 'image', timeoutMs = 900000, options 
 }
 
 /* ------------------------------------------------------------------
- * OCR 引擎选择（v1.6）：Windows OCR 兜底 + 可选 RapidOCR（PP-OCRv4，中文表格更准）。
- * RapidOCR 通过外部 Python 虚拟环境调用（插件不打包 onnxruntime）；未配置时自动跳过。
+ * OCR 引擎选择（v1.7）：随包 RapidOCR（PP-OCRv4）+ Windows OCR 兜底。
+ * RapidOCR 使用 vendor/rapidocr 的 Python 运行时，不依赖用户安装 onnxruntime。
  * ------------------------------------------------------------------ */
 
 export function rapidOcrScriptPath() {
@@ -403,9 +447,9 @@ async function renderPdfPages(file, pages, renderHeight, outDir, timeoutMs) {
 }
 
 /**
- * 调 RapidOCR（外部 Python 脚本：PP-OCRv4 识别）。
- * Windows 上先用 Windows.Data.Pdf 渲染成 3000px PNG，再交给 Python 识别（不依赖 PyMuPDF）；
- * 其它平台退化为传 PDF 路径（需要 pymupdf）。
+ * 调 RapidOCR（随包 Python 脚本：PP-OCRv4 识别）。
+ * Windows 上先用 Windows.Data.Pdf 渲染成 3000px PNG，再交给 Python 识别。
+ * 其它平台没有渲染路径，直接明确失败，不再假装支持。
  *
  * @param {string} file PDF 路径。
  * @param {number} timeoutMs 子进程超时。
@@ -431,23 +475,18 @@ export async function runRapidOcr(file, timeoutMs, options = {}) {
   try {
     const args = [script]
     const useWindowsRender = process.platform === 'win32' && findPowerShell() !== null
-    if (useWindowsRender) {
-      renderDir = fs.mkdtempSync(path.join(path.dirname(HERE), 'rapidocr-tmp-'))
-      const entries = await renderPdfPages(
-        file,
-        typeof options.pages === 'string' ? options.pages : '',
-        options.renderHeight || 3000,
-        renderDir,
-        timeoutMs,
-      )
-      const manifest = path.join(renderDir, 'manifest.json')
-      fs.writeFileSync(manifest, JSON.stringify(entries), 'utf8')
-      args.push('--manifest', manifest)
-    } else {
-      args.push('--path', file)
-      if (typeof options.pages === 'string' && options.pages.trim() !== '') args.push('--pages', options.pages.trim())
-      args.push('--render-height', String(Math.round(Number(options.renderHeight) || 3000)))
-    }
+    if (!useWindowsRender) throw new Error('RapidOCR 的 PDF 渲染需要 Windows（Windows.Data.Pdf）')
+    renderDir = fs.mkdtempSync(path.join(path.dirname(HERE), 'rapidocr-tmp-'))
+    const entries = await renderPdfPages(
+      file,
+      typeof options.pages === 'string' ? options.pages : '',
+      options.renderHeight || 3000,
+      renderDir,
+      timeoutMs,
+    )
+    const manifest = path.join(renderDir, 'manifest.json')
+    fs.writeFileSync(manifest, JSON.stringify(entries), 'utf8')
+    args.push('--manifest', manifest)
     const stdout = await execFileAsync(python, args, {
       encoding: 'utf8',
       maxBuffer: 128 * 1024 * 1024,

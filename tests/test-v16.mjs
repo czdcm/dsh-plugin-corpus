@@ -1,5 +1,5 @@
 /**
- * v1.6 验收：ZIP 重写/Office 瘦身、公式白名单、OCR 引擎与预算、新建集合自动授权。
+ * v1.6/v1.7 验收：ZIP 重写/Office 瘦身、公式白名单、OCR 引擎与预算、PDFium 文字层、新建集合自动授权。
  * 运行：node tests/test-v16.mjs（不依赖网络与真实语料；随包 vendor 缺失时跳过 RapidOCR 断言）
  */
 import assert from 'node:assert/strict'
@@ -8,9 +8,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readZip, rewriteZip, writeZip } from '../plugin/lib/zip.js'
-import { slimOfficeFile } from '../plugin/lib/extract.js'
+import { extractDocument, slimOfficeFile } from '../plugin/lib/extract.js'
 import { latexifyFormulaLines } from '../plugin/lib/formulas.js'
-import { ocrTimeoutMs, rapidOcrAvailable, resolveOcrEngine } from '../plugin/lib/pdf.js'
+import { ocrTimeoutMs, pdfiumAvailable, rapidOcrAvailable, resolveOcrEngine } from '../plugin/lib/pdf.js'
 import { AUTO_GRANT_AUDIT, canAutoGrant, grantNewCollection } from '../plugin/lib/autogrant.js'
 import { authorize } from '../plugin/lib/access.js'
 
@@ -100,6 +100,26 @@ try {
     ok('OCR 预算 ≥3000ms/页、上限 60 分钟；RapidOCR 缺配置时回退')
   }
 
+  // 4b. PDFium 文字层（随包 pypdfium2）：缺失路径不可用；随包运行时能提 CJK。
+  {
+    assert.equal(pdfiumAvailable({ python: 'C:/definitely/missing/python.exe' }), false, '路径不存在时 PDFium 不可用')
+    if (!pdfiumAvailable()) {
+      console.log('  SKIP PDFium 提取（随包 vendor/rapidocr 或 pypdfium2 缺失）')
+    } else {
+      const dir = tempDir('pdf')
+      const pdf = path.join(dir, 'cjk.pdf')
+      // 预生成的 CJK 小样本（china-s / Adobe-GB1，两行中文 + 数字单位），运行时不依赖生成工具。
+      const fixture = 'JVBERi0xLjcKJcK1wrYKJSBXcml0dGVuIGJ5IE11UERGIDEuMjguNgoKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFIvSW5mbzw8L1Byb2R1Y2VyKE11UERGIDEuMjguNik+Pj4+CmVuZG9iagoKMiAwIG9iago8PC9UeXBlL1BhZ2VzL0NvdW50IDEvS2lkc1s0IDAgUl0+PgplbmRvYmoKCjMgMCBvYmoKPDwvRm9udDw8L2NoaW5hLXMgNSAwIFI+Pj4+CmVuZG9iagoKNCAwIG9iago8PC9UeXBlL1BhZ2UvTWVkaWFCb3hbMCAwIDU5NSA4NDJdL1JvdGF0ZSAwL1Jlc291cmNlcyAzIDAgUi9QYXJlbnQgMiAwIFIvQ29udGVudHNbOCAwIFIgOSAwIFIgMTAgMCBSXT4+CmVuZG9iagoKNSAwIG9iago8PC9UeXBlL0ZvbnQvU3VidHlwZS9UeXBlMC9CYXNlRm9udC9IZWl0aS9FbmNvZGluZy9VbmlHQi1VVEYxNi1IL0Rlc2NlbmRhbnRGb250c1s2IDAgUl0+PgplbmRvYmoKCjYgMCBvYmoKPDwvVHlwZS9Gb250L1N1YnR5cGUvQ0lERm9udFR5cGUwL0Jhc2VGb250L0hlaXRpL0NJRFN5c3RlbUluZm88PC9SZWdpc3RyeShBZG9iZSkvT3JkZXJpbmcoR0IxKS9TdXBwbGVtZW50IDU+Pi9Gb250RGVzY3JpcHRvciA3IDAgUj4+CmVuZG9iagoKNyAwIG9iago8PC9UeXBlL0ZvbnREZXNjcmlwdG9yL0ZvbnROYW1lKEhlaXRpKS9Gb250QkJveFstMjAwIC0yMDAgMTIwMCAxMjAwXS9GbGFncyA0L0l0YWxpY0FuZ2xlIDAvQXNjZW50IDEwMDAvRGVzY2VudCAtMjAwL1N0ZW1WIDgwPj4KZW5kb2JqCgo4IDAgb2JqCjw8L0xlbmd0aCAxMTQvRmlsdGVyL0ZsYXRlRGVjb2RlPj4Kc3RyZWFtCnjaTYixCsJAEET7/Yr9AXH2klw2ICkEG7vAdsHiTrNooRD8f3DtjuExb4Z2OhsJIyI8Jh77xPam4/35+pTDl6Vnc15PWuumtcgE8WEr2R0K5Bo8gOTRGt8UDqCTIKRDs9FsbTz/fb7ZlS5GC/0A87ohOQplbmRzdHJlYW0KZW5kb2JqCgo5IDAgb2JqCjw8L0xlbmd0aCAxMTMvRmlsdGVyL0ZsYXRlRGVjb2RlPj4Kc3RyZWFtCnja4yrkcgrhMlQwAEJDBXMjBXNDI4WQXC795IzMvETdYgVDE4WQNIVoG1OzlFQz0+Qk89SkNDNzAwPTZIM0S1PzNNPURDMDAyMDAwNjYyCdCqRNoXxDIDaAYDDfAknOHCRuFxvixeUawhXIBQBc+R6VCmVuZHN0cmVhbQplbmRvYmoKCjEwIDAgb2JqCjw8L0xlbmd0aCAxMTMvRmlsdGVyL0ZsYXRlRGVjb2RlPj4Kc3RyZWFtCnjaLYq9CgIxEIT7fYp9AbnZrNkkIBaCjd3BdnJF7g8tThDfH8zBMXzzA0NfujkJo0k4BbYc2Dfqptf7U08/ljP7ys9LnnMstRl0AgIAzXtaEDu2NLD3VJa12FKjjGiMMSmiaj1+dh38QXennv4vcRzwCmVuZHN0cmVhbQplbmRvYmoKCnhyZWYKMCAxMQowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwNDIgMDAwMDAgbiAKMDAwMDAwMDEyMCAwMDAwMCBuIAowMDAwMDAwMTcyIDAwMDAwIG4gCjAwMDAwMDAyMTYgMDAwMDAgbiAKMDAwMDAwMDMzNiAwMDAwMCBuIAowMDAwMDAwNDQyIDAwMDAwIG4gCjAwMDAwMDA1OTEgMDAwMDAgbiAKMDAwMDAwMDczNCAwMDAwMCBuIAowMDAwMDAwOTE3IDAwMDAwIG4gCjAwMDAwMDEwOTkgMDAwMDAgbiAKCnRyYWlsZXIKPDwvU2l6ZSAxMS9Sb290IDEgMCBSL0lEWzxDM0EyQzJCN0MzQTJDMzgyQzNBQ0MyQTVDMkI1MTcyND48RjgwQURCRUE5NzkzM0YwNDQyQzhFREU3RDZDQzJGMzA+XT4+CnN0YXJ0eHJlZgoxMjgyCiUlRU9GCg=='
+      fs.writeFileSync(pdf, Buffer.from(fixture, 'base64'))
+      const doc = await extractDocument(pdf)
+      assert.equal(doc.meta.pdfText.engine, 'pdfium', '应使用随包 PDFium 文字层')
+      assert.ok(doc.text.includes('设计速度') && doc.text.includes('km/h'), 'PDFium 应提取出中文与单位')
+      assert.ok(!/[\u4e00-\u9fff] [\u4e00-\u9fff]/u.test(doc.text), 'CJK 之间不应插入空格')
+      assert.ok(doc.text.includes('120 100 80 60'), '数字与单位不应被拆开')
+      ok('PDFium 文字层可提取 CJK（随包 pypdfium2）')
+    }
+  }
+
   // 5. 新建集合自动授权：只给 session + 该集合，写审计；已有 deny / 已存在集合不放行。
   {
     const dshHome = tempDir('home')
@@ -170,7 +190,7 @@ try {
   }
 
   console.log('')
-  console.log('v1.6 验收通过（ZIP/瘦身/公式白名单/OCR/自动授权）。')
+  console.log('v1.6/v1.7 验收通过（ZIP/瘦身/公式白名单/OCR/PDFium/自动授权）。')
 } finally {
   for (const dir of tmpRoots) {
     try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* 忽略清理失败 */ }

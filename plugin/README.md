@@ -9,7 +9,7 @@ dsh-plugin-corpus 是 **DeepSeek Harness (DSH)** 的文件语料库插件。
 - **模型只读 `processed/`**：插件不再保存源文件；
 - **一切访问先过 ACL**：按工作区/会话/路径授权，默认拒绝。
 
-当前版本：**1.6.1**。
+当前版本：**1.7.0**。
 
 模型操作指南（给模型看）：[`MODEL_GUIDE.md`](MODEL_GUIDE.md)。
 
@@ -23,10 +23,11 @@ dsh-plugin-corpus 是 **DeepSeek Harness (DSH)** 的文件语料库插件。
 | `lib/client.js` | 左侧语料库页与右侧权限面板的前端代码 |
 | `lib/extract.js` | 文档提取调度：文本 / HTML / Office / PDF / OCR |
 | `lib/pdf.js` | PDF 文字层、逐页质量闸门、Windows OCR 与 RapidOCR |
+| `lib/pdf_pdfium.py` | 随包 PDFium（pypdfium2）文字层提取 |
 | `lib/office.js` | Office ZIP + XML 的纯 JS 回退解析 |
 | `lib/engine.js`、`jobs.js` | 索引、检索与后台重建 |
 | `lib/access.js`、`policy.js`、`autogrant.js` | ACL 判定、策略读写与新建集合自动授权 |
-| `vendor/` | OfficeCLI、pdftotext、RapidOCR 运行时（只在 Release 包中） |
+| `vendor/` | OfficeCLI、PDFium（pypdfium2）、RapidOCR 运行时（只在 Release 包中） |
 
 ## 1. 安装与启用
 
@@ -151,7 +152,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 | `.md` `.markdown` `.txt` `.text` | 直接读取文本 |
 | `.html` `.htm` | 去标签，保留标题/段落/列表 |
 | `.csv` | 文本化表格 |
-| `.pdf` | 随包 `pdftotext` 抽文字层；缺文字层/乱码的页逐页 OCR（Windows OCR 或 RapidOCR），最后按页序合并 |
+| `.pdf` | 随包 PDFium（pypdfium2）抽文字层，字符坐标保守补空格；缺文字层/乱码的页逐页 OCR（Windows OCR 或 RapidOCR），最后按页序合并 |
 | `.docx` `.xlsx` `.pptx` | 优先 OfficeCLI；失败/缺失时回退纯 JS ZIP+XML 解析 |
 | `.png` `.jpg` `.jpeg` `.webp` `.gif` `.bmp` `.tif` `.tiff` | 有可用视觉模型时结构化；否则使用 Windows OCR/占位 Markdown |
 
@@ -159,9 +160,8 @@ PDF 文本在进入 AI 前会做质量闸门：空格比例过低、符号/控�
 
 面板里的 **Vision** 不可用时会显示具体原因，通常是当前默认模型不支持图片输入。可以在 DSH profile 的插件配置中设置 `ingestVisionProvider` / `ingestVisionModel` 指向可接收图片的模型；未配置视觉模型时图片退回内置 Windows OCR。
 
-完整包随附 PDF/Office 工具。没有 `officecli` 时 Office 回退纯 JS；没有 `pdftotext` 时 PDF 文字层不可提取，只能整本 OCR（Windows OCR 或 RapidOCR；都不可用则无法导入 PDF）。官方 Release 只发布完整包。
-OfficeCLI 是 Apache-2.0；Poppler `pdftotext` 是 GPL-2.0-or-later，详见仓库根目录的
-`THIRD_PARTY_NOTICES.md`。
+完整包随附 PDF/Office 工具。没有 `officecli` 时 Office 回退纯 JS；没有 `pypdfium2` 时 PDF 文字层不可提取，只能整本 OCR（Windows OCR 或 RapidOCR；都不可用则无法导入 PDF）。官方 Release 只发布完整包。
+OfficeCLI 是 Apache-2.0；PDFium 是 BSD-3-Clause，pypdfium2 是 Apache-2.0，详见仓库根目录的 `THIRD_PARTY_NOTICES.md`。
 
 ---
 
@@ -230,6 +230,7 @@ OfficeCLI 是 Apache-2.0；Poppler `pdftotext` 是 GPL-2.0-or-later，详见仓�
 | `ocrPython` | 空 | 覆盖随包 RapidOCR 的 `python.exe` 绝对路径；留空 = 使用随包运行时（`vendor/rapidocr/`） |
 | `ocrRenderHeight` | `3000` | OCR 渲染目标像素高（0 = 按 PDF DIP 尺寸）；中文表格建议 3000 |
 | `ocrPageTimeoutMs` | `6000` | 逐页 OCR 预算（毫秒）；总预算 = 页数 × 该值，下限 15 分钟、上限 60 分钟 |
+| `pdfPython` | 空 | 覆盖 PDFium 使用的 `python.exe` 绝对路径；留空 = 使用随包运行时（`vendor/rapidocr/`） |
 
 > **性能说明（v1.4.2 起）**：插件跑在 DSH 宿主进程里，任何同步长任务都会连带卡住 GUI。
 > 现在导入按文件异步执行、每 32 个文件或 8ms 让出一次事件循环；单次导入只预热前 40 份目录，
@@ -288,6 +289,7 @@ Invoke-RestMethod 'http://127.0.0.1:<port>/api/dsh-plugin-corpus/gallery?limit=1
 - 浏览器上传单文件默认 25 MiB；本机路径单文件默认 256 MiB；格式白名单见 `/import/targets`；
 - **超过 256 MiB 的 Office 文件**会自动生成瘦身副本（跳过内嵌视频/音频、`oleObject*.bin`、`fntdata/odttf` 字体），用 officecli 正常提取；原文件不改，`warnings` 会说明忽略了多少 MB。瘦身后仍超限才报错；
 - 扫描版 PDF 默认用**随包 RapidOCR**（渲染 3000 px 高，单页约 3–6 秒含渲染）；混合型 PDF 只 OCR 缺文字层的页。`ocrPython` 可指向外部 venv 覆盖随包运行时，失败自动回退 Windows OCR；
+- PDF 文字层用随包 PDFium（pypdfium2，Apache-2.0 + BSD-3-Clause），自带 CJK CMap；缺文字层的页才进 OCR。`pdfPython` 仅用于覆盖 PDFium 的 Python 解释器，留空即用 `vendor/rapidocr/`；
 - 逐页 OCR 预算 = 页数 × `ocrPageTimeoutMs`（默认 6000，下限 15 分钟、上限 60 分钟）；超时会在错误里写明“OCR 错误”，不会静默返回空文本；
 - **新建集合自动授权**：仅当集合尚不存在、当前会话没有任何 grant、且没有显式 deny 时，自动补一条 `paths: [<该集合>]` 的最小授权（优先 session，其次 workspace）；审计写在 `.corpus/audit/auto-grant.jsonl`，可在「语料权限」面板撤销。集合已存在时仍需人工授权；
 - `corpus_status(jobId)` 同时接受 reindex 的 `job-*` 与 ingest 的 `ingest-*`；
@@ -304,7 +306,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\test-all.ps1
 # 部署到 ~/.dsh/plugins/dsh-plugin-corpus
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 
-# 打完整插件包（唯一的发布形态：包含 OfficeCLI 与 pdftotext）
+# 打完整插件包（唯一的发布形态：包含 OfficeCLI 与 PDFium）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\package-plugin.ps1
 ```
 
@@ -325,12 +327,13 @@ $env:CORPUS_TEST_DSH = '...'
 
 ## 10. 许可证
 
-本项目源码采用 **GPL-2.0-or-later**。
+本项目源码采用 **MIT**。
 
 第三方组件：
 
 - OfficeCLI：Apache-2.0；
-- Poppler `pdftotext`：GPL-2.0-or-later；
+- PDFium：BSD-3-Clause；
+- pypdfium2：Apache-2.0；
 - Windows OCR：调用系统 API，不再分发微软二进制。
 
 完整说明见仓库根目录的 `THIRD_PARTY_NOTICES.md` 与 `LICENSE`。

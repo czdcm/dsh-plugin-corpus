@@ -1,7 +1,7 @@
 # dsh-plugin-corpus 模型操作指南（MODEL_GUIDE）
 
 > 读者：DSH 中的模型（也适合用户查阅）。
-> 适用版本：**1.6.1+**（PDF 逐页提取、随包 RapidOCR、大 Office 自动瘦身、新建集合自动授权）。
+> 适用版本：**1.7.0+**（PDF 逐页提取、随包 PDFium + RapidOCR、大 Office 自动瘦身、新建集合自动授权）。
 > 目标：用户提出“导入 / 查找 / 整理 / 删除 / 重建 / 改合集”等语料库操作时，模型能选对工具、填对参数、按正确顺序执行并验证结果。
 
 ---
@@ -163,8 +163,8 @@
 
 - **后台任务**：立即返回 `started/jobId/state`；同一时刻只能跑一个 ingest，忙时返回 `busy:true`，等 `corpus_status` 里 `ingest.active` 为空再试。返回的 `jobId` 可直接用于 `corpus_status({jobId})`。
 - `ai:true`（默认）会让内置小代理再总结/结构化一次（更慢，消耗模型调用）；`ai:false` 只做确定性提取，通常够用。
-- PDF 是**逐页提取**：文字层用随包 `pdftotext`，缺文字层/乱码的页逐页 OCR，最后按页合并；扫描书 386 页约 90 秒，期间宿主保持响应。
-- OCR 引擎：默认 `auto`（完整包内置 RapidOCR，优先用它；`ocrPython` 可覆盖为外部 venv）；渲染默认 3000 px 高，逐页预算默认 6 秒（总预算下限 15 分钟、上限 60 分钟），超时会明确报错。结果在 `.meta.json` 的 `meta.ocr` 里记录引擎/页数/失败数。
+- PDF 是**逐页提取**：文字层用随包 PDFium（pypdfium2，自带 CJK CMap），并用字符坐标保守补空格（仅 ASCII 字母间，CJK 页跳过）；缺文字层/乱码的页再做 OCR，最后按页合并；扫描书 386 页约 90 秒，期间宿主保持响应。
+- OCR 引擎：默认 `auto`（完整包内置 RapidOCR，优先用它；`ocrPython` 可覆盖为外部 venv）；渲染默认 3000 px 高，逐页预算默认 6 秒（总预算下限 15 分钟、上限 60 分钟），超时会明确报错。结果在 `.meta.json` 的 `meta.ocr` 里记录引擎/页数/失败数，`meta.pdfText` 记录文字层引擎（`pdfium`）。
 - 超过 256 MiB 的 Office 文件会**自动瘦身**（跳过内嵌视频/字体/oleObject），`warnings` 会说明忽略了多少 MB；原文件不改。瘦身后仍超限才失败。
 - **新建集合自动授权**：目标集合不存在、当前会话没有任何 grant 时，插件自动补一条只含该集合的最小授权，返回 `autoGranted: true` + `autoGrant`（规则/备份/审计）。集合已存在、命中显式 deny、策略损坏时不自动放行。
 - 每次导入生成 `<collection>/<时间戳>-<文件名>/processed/<文件名>.md` + `.meta.json`；重复导入不会覆盖，会生成新文件夹。

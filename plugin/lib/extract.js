@@ -4,7 +4,7 @@
  * 不依赖本机安装的 Python；Office / PDF 的高保真提取依赖随包二进制（官方完整包均包含）：
  *   · .md/.txt/.csv/.html  纯 JS；
  *   · .docx/.xlsx/.pptx    officecli 优先，缺失/失败时回退纯 JS（ZIP + XML，见 office.js）；
- *   · .pdf                 随包 pdftotext（vendor/pdftotext）；无文字层的扫描件用
+ *   · .pdf                 随包 PDFium（pypdfium2）；无文字层的扫描件用
  *                          ocr_windows.ps1（Windows 自带 PDF 渲染 + OCR）兜底；
  *   · .png/.jpg/.jpeg/.webp 交给内置小代理做图片理解（不可用时用同一 OCR 脚本）。
  */
@@ -13,7 +13,7 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { extractOffice, extractOfficeFormulas, extractXlsxFormulas } from './office.js'
-import { compressPageRanges, isUsablePdfText, mergePdfPageTexts, needsOcrPage, ocrAvailable, ocrTimeoutMs, parseOcrPages, pdfExtractorAvailability, pdfTextQuality, resolveOcrEngine, runBundledPdftotext, runOcr, runWindowsOcr, splitPdfPages } from './pdf.js'
+import { compressPageRanges, isUsablePdfText, mergePdfPageTexts, needsOcrPage, ocrAvailable, ocrTimeoutMs, parseOcrPages, pdfExtractorAvailability, pdfiumAvailable, pdfTextQuality, resolveOcrEngine, runOcr, runPdfiumText, runWindowsOcr } from './pdf.js'
 import { rewriteZip } from './zip.js'
 import { extractFormulaLines, latexifyFormulaLines, mathmlToLatex, normalizeLatex } from './formulas.js'
 
@@ -484,9 +484,10 @@ export async function extractDocument(file, options = {}) {
     }
   } else if (ext === '.pdf') {
     const ocrConfig = options.ocr && typeof options.ocr === 'object' ? options.ocr : {}
+    const pdfConfig = options.pdf && typeof options.pdf === 'object' ? options.pdf : {}
     const ocrChoice = resolveOcrEngine(ocrConfig)
     const canOcr = ocrChoice.engine !== null
-    const pdfAvailable = pdfExtractorAvailability()
+    const canPdfium = pdfiumAvailable(pdfConfig)
     if (ocrChoice.reason !== '') warnings.push(ocrChoice.reason)
     text = ''
     let textPages = []
@@ -495,69 +496,74 @@ export async function extractDocument(file, options = {}) {
     let ocrRuns = 0
     let ocrError = null
     let ocrFailures = 0
+    let textEngine = 'none'
 
-    // 第一层：文字层（整本 pdftotext），按 \f 拆页后逐页判断。
-    if (pdfAvailable.bundled) {
+    // 第一层：PDFium（随包 pypdfium2）按页提取文字层。
+    if (canPdfium) {
       try {
-        const candidate = await runBundledPdftotext(workFile)
-        textPages = splitPdfPages(candidate)
-        pageCount = textPages.length
-        const missing = []
-        for (let index = 0; index < textPages.length; index++) {
-          if (needsOcrPage(textPages[index])) missing.push(index + 1)
-        }
-        if (missing.length > 0 && canOcr) {
-          // 逐页兜底：只为缺文字层/乱码的页跑 OCR，文字页原样保留。
-          const pagesSpec = compressPageRanges(missing)
-          const timeoutMs = ocrTimeoutMs(missing.length, ocrConfig)
-          warnings.push(`PDF 有 ${missing.length}/${pageCount} 页没有可读文字层，仅对这些页使用 OCR（${ocrChoice.engine}）`)
-          try {
-            const stdout = await runOcr(ocrChoice.engine, workFile, 'pdf', timeoutMs, {
-              pages: pagesSpec,
-              python: ocrConfig.python,
-              renderHeight: ocrConfig.renderHeight,
-            })
-            const parsed = parseOcrPages(stdout)
-            ocrMap = parsed.pages
-            ocrRuns = 1
-            ocrFailures = parsed.failures.size
-            if (parsed.failures.size > 0) {
-              const first = [...parsed.failures.keys()].slice(0, 10).join(', ')
-              warnings.push(`有 ${parsed.failures.size} 页 OCR 失败（第 ${first}${parsed.failures.size > 10 ? '…' : ''} 页）`)
-            }
-          } catch (error) {
-            ocrError = error instanceof Error ? error.message : String(error)
-            warnings.push(`PDF 逐页 OCR 失败：${ocrError}`)
-            // RapidOCR 运行失败（缺依赖/脚本异常）时回退 Windows OCR，保证有兜底。
-            if (ocrChoice.engine === 'rapidocr' && ocrAvailable()) {
-              try {
-                const fallback = await runWindowsOcr(workFile, 'pdf', timeoutMs, {
-                  pages: pagesSpec,
-                  renderHeight: ocrConfig.renderHeight,
-                })
-                const parsed = parseOcrPages(fallback)
-                ocrMap = parsed.pages
-                ocrRuns = 2
-                ocrFailures = parsed.failures.size
-                ocrError = null
-                warnings.push('RapidOCR 不可用，已回退 Windows OCR')
-              } catch (fallbackError) {
-                warnings.push(`回退 Windows OCR 也失败：${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`)
-              }
-            }
-          }
-        } else if (missing.length > 0) {
-          warnings.push(`PDF 有 ${missing.length}/${pageCount} 页没有可读文字层，且当前系统没有可用的 OCR`)
-        }
+        const parsed = await runPdfiumText(workFile, '', { ...pdfConfig, timeoutMs: 180000 })
+        textPages = parsed.pages.map((item) => String(item && item.text ? item.text : ''))
+        pageCount = Number(parsed.pageCount) || textPages.length
+        textEngine = 'pdfium'
       } catch (error) {
-        warnings.push(`随包 pdftotext 失败：${error instanceof Error ? error.message : String(error)}`)
+        warnings.push(`PDFium 文字层提取失败：${error instanceof Error ? error.message : String(error)}`)
       }
-    } else {
-      // 发布版均带 pdftotext；缺失时只能整本 OCR（或明确失败）。
-      warnings.push('插件内没有随包 pdftotext（官方完整包应包含）；PDF 文字层无法提取，改为整本 OCR')
+    }
+    if (textEngine === 'none') {
+      warnings.push('插件内没有可用的 PDFium 运行时（vendor/rapidocr/python + pypdfium2）；PDF 文字层无法提取，改为整本 OCR')
     }
 
-    // 第二层（整体）：没有文字层（pdftotext 缺失/失败）时整本 OCR。
+    // 第二层：逐页质量闸门；缺文字层/乱码的页交给 OCR。
+    if (textPages.length > 0) {
+      const missing = []
+      for (let index = 0; index < textPages.length; index++) {
+        if (needsOcrPage(textPages[index])) missing.push(index + 1)
+      }
+      if (missing.length > 0 && canOcr) {
+        // 逐页兜底：只为缺文字层/乱码的页跑 OCR，文字页原样保留。
+        const pagesSpec = compressPageRanges(missing)
+        const timeoutMs = ocrTimeoutMs(missing.length, ocrConfig)
+        warnings.push(`PDF 有 ${missing.length}/${pageCount} 页没有可读文字层，仅对这些页使用 OCR（${ocrChoice.engine}）`)
+        try {
+          const stdout = await runOcr(ocrChoice.engine, workFile, 'pdf', timeoutMs, {
+            pages: pagesSpec,
+            python: ocrConfig.python,
+            renderHeight: ocrConfig.renderHeight,
+          })
+          const parsed = parseOcrPages(stdout)
+          ocrMap = parsed.pages
+          ocrRuns = 1
+          ocrFailures = parsed.failures.size
+          if (parsed.failures.size > 0) {
+            const first = [...parsed.failures.keys()].slice(0, 10).join(', ')
+            warnings.push(`有 ${parsed.failures.size} 页 OCR 失败（第 ${first}${parsed.failures.size > 10 ? '…' : ''} 页）`)
+          }
+        } catch (error) {
+          ocrError = error instanceof Error ? error.message : String(error)
+          warnings.push(`PDF 逐页 OCR 失败：${ocrError}`)
+          // RapidOCR 运行失败（缺依赖/脚本异常）时回退 Windows OCR，保证有兜底。
+          if (ocrChoice.engine === 'rapidocr' && ocrAvailable()) {
+            try {
+              const fallback = await runWindowsOcr(workFile, 'pdf', timeoutMs, {
+                pages: pagesSpec,
+                renderHeight: ocrConfig.renderHeight,
+              })
+              const parsed = parseOcrPages(fallback)
+              ocrMap = parsed.pages
+              ocrRuns = 2
+              ocrFailures = parsed.failures.size
+              ocrError = null
+              warnings.push('RapidOCR 不可用，已回退 Windows OCR')
+            } catch (fallbackError) {
+              warnings.push(`回退 Windows OCR 也失败：${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`)
+            }
+          }
+        }
+      } else if (missing.length > 0) {
+        warnings.push(`PDF 有 ${missing.length}/${pageCount} 页没有可读文字层，且当前系统没有可用的 OCR`)
+      }
+    }
+    // 兜底层（整本）：PDFium 不可用或没有文字层时整本 OCR。
     if (pageCount === 0 && canOcr) {
       try {
         const stdout = await runOcr(ocrChoice.engine, workFile, 'pdf', ocrTimeoutMs(1, ocrConfig), {
@@ -596,24 +602,23 @@ export async function extractDocument(file, options = {}) {
     const mergedText = merged.pages.join('\n\n').trim()
     if (mergedText !== '') text = mergedText
     if (merged.ocrPages > 0) {
-      extractor = merged.textPages > 0 ? 'pdf-mixed' : 'windows-ocr'
+      extractor = merged.textPages > 0 ? 'pdf-mixed' : (ocrChoice.engine === 'rapidocr' ? 'rapidocr' : 'windows-ocr')
       warnings.push(`本次有 ${merged.ocrPages} 页来自 OCR（${ocrChoice.engine || 'unknown'}），数值/表格建议对照原件核对`)
     } else if (merged.textPages > 0) {
-      extractor = 'bundled-pdftotext'
+      extractor = 'pdfium'
     }
     if (!isUsablePdfText(text)) {
       const detail = pageCount > 0
         ? `（共 ${pageCount} 页：文字层 ${merged.textPages} 页、OCR ${merged.ocrPages} 页、不可读 ${merged.weakPages + merged.emptyPages} 页）`
         : ''
       const ocrNote = ocrError !== null ? `；OCR 错误：${ocrError}` : ''
-      throw new Error(pdfAvailable.bundled
-        ? `PDF 没有可读文字层，且 OCR 不可用或结果不可读${detail}${ocrNote}；请检查 PDF 是否为扫描件/加密件`
-        : `PDF 文字提取需要随包 pdftotext（官方完整包包含）${detail}${ocrNote}；当前安装缺少 vendor/pdftotext，且没有可用的 OCR`)
+      throw new Error(`PDF 没有可读文字层，且 OCR 不可用或结果不可读${detail}${ocrNote}；请检查 PDF 是否为扫描件/加密件（文字层引擎：${textEngine}）`)
     }
     const quality = pdfTextQuality(text)
     meta = {
       ...meta,
       pdfQuality: quality,
+      pdfText: { engine: textEngine },
       pdfPages: {
         total: pageCount,
         text: merged.textPages,
