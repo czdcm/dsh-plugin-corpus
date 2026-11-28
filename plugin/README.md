@@ -152,7 +152,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\deploy.ps1
 | `.md` `.markdown` `.txt` `.text` | 直接读取文本 |
 | `.html` `.htm` | 去标签，保留标题/段落/列表 |
 | `.csv` | 文本化表格 |
-| `.pdf` | 随包 PDFium（pypdfium2）抽文字层，字符坐标保守补空格；缺文字层/乱码的页逐页 OCR（Windows OCR 或 RapidOCR），最后按页序合并 |
+| `.pdf` | 随包 PDFium（pypdfium2）抽文字层，字符坐标保守补空格；缺文字层/乱码的页逐页 OCR（Windows OCR 或 RapidOCR），最后按页序合并（1.7.0） |
 | `.docx` `.xlsx` `.pptx` | 优先 OfficeCLI；失败/缺失时回退纯 JS ZIP+XML 解析 |
 | `.png` `.jpg` `.jpeg` `.webp` `.gif` `.bmp` `.tif` `.tiff` | 有可用视觉模型时结构化；否则使用 Windows OCR/占位 Markdown |
 
