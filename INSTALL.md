@@ -20,7 +20,7 @@ dsh-plugin-corpus/
 └─ vendor/              OfficeCLI、PDFium（pypdfium2）、RapidOCR 运行时及其许可证
 ```
 
-vendor 组件已经包含在完整包里，不需要单独安装 OfficeCLI 或 pypdfium2。
+vendor 组件（OfficeCLI、PDFium/pypdfium2、RapidOCR）已经包含在完整包里，不需要单独安装。
 
 ## 2. 环境要求
 
