@@ -71,6 +71,7 @@
 | **OfficeCLI** | Office 文档文本提取（优先），失败回退纯 JS | `vendor/officecli/` |
 | **纯 JS ZIP+XML** | docx/xlsx/pptx 兜底解析 | `zip.js` + `office.js` |
 | **Git / PowerShell** | 版本管理、部署、测试、打包 | `tools/*.ps1` |
+PDF 文字层自 1.7.0 起不再依赖 pdftotext / PyMuPDF；pypdfium2 随 `vendor/rapidocr/site-packages` 分发。
 
 ### 2.3 测试与交付
 
